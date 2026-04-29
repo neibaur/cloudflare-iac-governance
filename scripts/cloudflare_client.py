@@ -16,11 +16,21 @@ class CloudflareAuditor:
         self.base_url = base_url.rstrip("/")
 
     def verify_connection(self) -> dict[str, Any]:
-        payload = self._request("/user/tokens/verify")
+        try:
+            payload = self._request("/user/tokens/verify")
+        except CloudflareAPIError as exc:
+            raise CloudflareAPIError(
+                "Unable to verify the Cloudflare API token. Confirm "
+                "CLOUDFLARE_API_TOKEN is set locally and contains a valid scoped token."
+            ) from exc
 
         if not payload.get("success", False):
             errors = payload.get("errors") or []
-            raise CloudflareAPIError(f"Cloudflare token verification failed: {errors}")
+            raise CloudflareAPIError(
+                "Unable to verify the Cloudflare API token. Confirm "
+                "CLOUDFLARE_API_TOKEN is set locally and contains a valid scoped token. "
+                f"Cloudflare returned: {errors}"
+            )
 
         result = payload.get("result")
         if not isinstance(result, dict):
