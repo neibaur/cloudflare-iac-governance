@@ -44,9 +44,7 @@ def test_get_zone_security_settings_parses_successful_response(
         "bot_fight_mode": "on",
     }
     assert mock_cloudflare.call_count == 2
-    mock_cloudflare.assert_any_call(
-        f"/zones/{cloudflare_fixture_data.zone_id}/settings/ssl"
-    )
+    mock_cloudflare.assert_any_call(f"/zones/{cloudflare_fixture_data.zone_id}/settings/ssl")
     mock_cloudflare.assert_any_call(
         f"/zones/{cloudflare_fixture_data.zone_id}/settings/bot_fight_mode"
     )

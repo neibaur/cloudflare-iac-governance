@@ -65,7 +65,10 @@ def main() -> int:
                 text=True,
             )
         except (OSError, subprocess.CalledProcessError) as exc:
-            print(f"Terraform was found at {terraform_path}, but could not run: {exc}", file=sys.stderr)
+            print(
+                f"Terraform was found at {terraform_path}, but could not run: {exc}",
+                file=sys.stderr,
+            )
             exit_code = 1
         else:
             print(f"Terraform binary: {terraform_path}")

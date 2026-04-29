@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, cast
 from urllib import error, request
 
 
@@ -76,9 +76,7 @@ class CloudflareAuditor:
             )
 
         if "value" not in setting:
-            raise CloudflareAPIError(
-                f"Cloudflare setting '{setting_id}' did not include a value."
-            )
+            raise CloudflareAPIError(f"Cloudflare setting '{setting_id}' did not include a value.")
 
         return setting["value"]
 
@@ -94,12 +92,17 @@ class CloudflareAuditor:
 
         try:
             with request.urlopen(http_request, timeout=30) as response:
-                return json.loads(response.read().decode("utf-8"))
+                payload = json.loads(response.read().decode("utf-8"))
         except error.HTTPError as exc:
             detail = exc.read().decode("utf-8")
             raise CloudflareAPIError(f"Cloudflare API returned HTTP {exc.code}: {detail}") from exc
         except error.URLError as exc:
             raise CloudflareAPIError(f"Cloudflare API request failed: {exc.reason}") from exc
+
+        if not isinstance(payload, dict):
+            raise CloudflareAPIError("Cloudflare API response was not a JSON object.")
+
+        return cast(dict[str, Any], payload)
 
 
 class CloudflareAPIError(RuntimeError):
