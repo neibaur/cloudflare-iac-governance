@@ -41,7 +41,7 @@ def test_main_passes_when_all_dependencies_are_available(monkeypatch, capsys):
         "run",
         lambda *args, **kwargs: SimpleNamespace(stdout="Terraform v1.15.0\n"),
     )
-    monkeypatch.setattr(check_deps, "check_python_dependency", lambda *args: True)
+    monkeypatch.setattr(check_deps, "check_python_dependency", lambda *args, **kwargs: True)
 
     assert check_deps.main() == 0
 
@@ -52,7 +52,7 @@ def test_main_passes_when_all_dependencies_are_available(monkeypatch, capsys):
 
 def test_main_fails_when_terraform_is_missing(monkeypatch, capsys):
     monkeypatch.setattr(check_deps.shutil, "which", lambda command: None)
-    monkeypatch.setattr(check_deps, "check_python_dependency", lambda *args: True)
+    monkeypatch.setattr(check_deps, "check_python_dependency", lambda *args, **kwargs: True)
 
     assert check_deps.main() == 1
 
@@ -66,7 +66,7 @@ def test_main_fails_when_terraform_cannot_run(monkeypatch, capsys):
 
     monkeypatch.setattr(check_deps.shutil, "which", lambda command: "terraform.exe")
     monkeypatch.setattr(check_deps.subprocess, "run", fail_run)
-    monkeypatch.setattr(check_deps, "check_python_dependency", lambda *args: True)
+    monkeypatch.setattr(check_deps, "check_python_dependency", lambda *args, **kwargs: True)
 
     assert check_deps.main() == 1
 
@@ -86,7 +86,7 @@ def test_main_fails_when_python_dependency_is_missing(monkeypatch):
     monkeypatch.setattr(
         check_deps,
         "check_python_dependency",
-        lambda *args: next(dependency_results),
+        lambda *args, **kwargs: next(dependency_results),
     )
 
     assert check_deps.main() == 1

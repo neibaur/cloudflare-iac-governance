@@ -164,3 +164,71 @@ def test_request_rejects_non_object_json(mocker):
 
     with pytest.raises(CloudflareAPIError, match="not a JSON object"):
         auditor._request("/list-json")
+
+
+def test_list_all_zones_prints_terraform_hcl(mocker, capsys):
+    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    mocker.patch.object(
+        auditor,
+        "verify_connection",
+        return_value={
+            "status": "active",
+            "policies": [{"permission_groups": [{"name": "Zone Read"}]}],
+        },
+    )
+    mocker.patch.object(
+        auditor,
+        "_request",
+        side_effect=[
+            {
+                "success": True,
+                "result": [{"name": "beta.example", "id": "zone-beta"}],
+                "result_info": {"total_pages": 2},
+            },
+            {
+                "success": True,
+                "result": [{"name": "alpha.example", "id": "zone-alpha"}],
+                "result_info": {"total_pages": 2},
+            },
+        ],
+    )
+
+    hcl = auditor.list_all_zones()
+
+    assert hcl == "\n".join(
+        [
+            "domains = {",
+            '  "alpha.example" = {',
+            '    zone_id = "zone-alpha"',
+            "  }",
+            "",
+            '  "beta.example" = {',
+            '    zone_id = "zone-beta"',
+            "  }",
+            "}",
+        ]
+    )
+    assert capsys.readouterr().out == f"{hcl}\n"
+
+
+def test_list_all_zones_reports_missing_zone_read(mocker):
+    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    mocker.patch.object(auditor, "verify_connection", return_value={"status": "active"})
+    mocker.patch.object(
+        auditor,
+        "_request",
+        side_effect=CloudflareAPIError("Cloudflare API returned HTTP 403: forbidden"),
+    )
+
+    with pytest.raises(CloudflareAPIError, match="Zone:Read"):
+        auditor.list_all_zones()
+
+
+def test_zones_from_payload_rejects_failed_response():
+    with pytest.raises(CloudflareAPIError, match="zone list request failed"):
+        CloudflareAuditor._zones_from_payload({"success": False, "errors": ["forbidden"]})
+
+
+def test_zones_from_payload_rejects_malformed_zone():
+    with pytest.raises(CloudflareAPIError, match="without name or id"):
+        CloudflareAuditor._zones_from_payload({"success": True, "result": [{"name": "example"}]})

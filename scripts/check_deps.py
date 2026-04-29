@@ -6,10 +6,35 @@ import sys
 from importlib import metadata, util
 
 
-def check_python_dependency(display_name: str, modules: tuple[str, ...]) -> bool:
+def major_version(version: str) -> int | None:
+    try:
+        return int(version.split(".", maxsplit=1)[0])
+    except IndexError, ValueError:
+        return None
+
+
+def check_python_dependency(
+    display_name: str,
+    modules: tuple[str, ...],
+    minimum_major_version: int | None = None,
+) -> bool:
     for module in modules:
         if util.find_spec(module) is not None:
             version = dependency_version(display_name)
+            found_major_version = major_version(version) if version is not None else None
+            if found_major_version is not None and minimum_major_version is not None:
+                if found_major_version >= minimum_major_version:
+                    suffix = f" ({version})" if version else ""
+                    print(f"{display_name}: available via module '{module}'{suffix}")
+                    return True
+
+                print(
+                    f"{display_name} {version} was found, "
+                    f"but v{minimum_major_version}+ is required.",
+                    file=sys.stderr,
+                )
+                return False
+
             suffix = f" ({version})" if version else ""
             print(f"{display_name}: available via module '{module}'{suffix}")
             return True
@@ -77,7 +102,7 @@ def main() -> int:
     if not check_python_dependency("pytest", ("pytest",)):
         exit_code = 1
 
-    if not check_python_dependency("cloudflare", ("cloudflare",)):
+    if not check_python_dependency("cloudflare", ("cloudflare",), minimum_major_version=4):
         exit_code = 1
 
     if not check_python_dependency("ruff", ("ruff",)):
