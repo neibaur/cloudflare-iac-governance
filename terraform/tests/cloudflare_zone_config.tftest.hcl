@@ -4,7 +4,7 @@ run "zone_config_defaults_are_applied" {
   command = plan
 
   module {
-    source = "../modules/cloudflare_zone_config"
+    source = "./modules/cloudflare_zone_config"
   }
 
   variables {
@@ -27,7 +27,7 @@ run "zone_config_rejects_empty_zone_id" {
   command = plan
 
   module {
-    source = "../modules/cloudflare_zone_config"
+    source = "./modules/cloudflare_zone_config"
   }
 
   variables {

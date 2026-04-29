@@ -223,4 +223,6 @@ __marimo__/
 **/*.tfstate*
 **/.terraform/
 **/*.tfvars
+terraform/terraform.tfvars
+terraform/secrets.auto.tfvars
 .terraform.lock.hcl

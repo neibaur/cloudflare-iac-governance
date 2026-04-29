@@ -1,3 +1,14 @@
+variable "cloudflare_api_token" {
+  description = "Cloudflare API token used by the Terraform provider."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = var.cloudflare_api_token != ""
+    error_message = "cloudflare_api_token must not be empty."
+  }
+}
+
 variable "domains" {
   description = "Map of domain names to Cloudflare zone IDs and optional security posture overrides."
   type = map(object({
