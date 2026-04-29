@@ -88,6 +88,23 @@ def mock_cloudflare(mocker, cloudflare_fixture_data):
 
 
 @pytest.fixture
+def mock_cloudflare_token_verify(mocker):
+    """Patch CloudflareAuditor token verification with a successful response."""
+    return mocker.patch(
+        "scripts.cloudflare_client.CloudflareAuditor._request",
+        return_value={
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {
+                "id": "token-id",
+                "status": "active",
+            },
+        },
+    )
+
+
+@pytest.fixture
 def mock_cloudflare_http(mocker, cloudflare_fixture_data):
     """Mock requests-based Cloudflare API calls used by audit scripts."""
     if "requests" not in sys.modules:

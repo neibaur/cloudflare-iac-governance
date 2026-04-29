@@ -15,6 +15,21 @@ class CloudflareAuditor:
         self.api_token = api_token
         self.base_url = base_url.rstrip("/")
 
+    def verify_connection(self) -> dict[str, Any]:
+        payload = self._request("/user/tokens/verify")
+
+        if not payload.get("success", False):
+            errors = payload.get("errors") or []
+            raise CloudflareAPIError(f"Cloudflare token verification failed: {errors}")
+
+        result = payload.get("result")
+        if not isinstance(result, dict):
+            raise CloudflareAPIError(
+                "Cloudflare token verification did not include a result object."
+            )
+
+        return result
+
     def get_zone_security_settings(self, zone_id: str) -> dict[str, Any]:
         if not zone_id:
             raise ValueError("zone_id is required.")
