@@ -24,7 +24,7 @@ def check_python_dependency(display_name: str, modules: tuple[str, ...]) -> bool
 def dependency_version(display_name: str) -> str | None:
     candidates = {
         "pytest": ("pytest",),
-        "python-cloudflare": ("cloudflare", "python-cloudflare"),
+        "cloudflare": ("cloudflare",),
     }
 
     for package_name in candidates.get(display_name, (display_name,)):
@@ -72,7 +72,7 @@ def main() -> int:
     if not check_python_dependency("pytest", ("pytest",)):
         exit_code = 1
 
-    if not check_python_dependency("python-cloudflare", ("CloudFlare", "cloudflare")):
+    if not check_python_dependency("cloudflare", ("cloudflare",)):
         exit_code = 1
 
     return exit_code
