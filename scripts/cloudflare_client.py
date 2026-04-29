@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 from typing import Any, cast
-from urllib import error, request
+
+import httpx
 
 
 class CloudflareAuditor:
@@ -81,23 +81,25 @@ class CloudflareAuditor:
         return setting["value"]
 
     def _request(self, path: str) -> dict[str, Any]:
-        http_request = request.Request(
-            f"{self.base_url}{path}",
-            method="GET",
-            headers={
-                "Authorization": f"Bearer {self.api_token}",
-                "Content-Type": "application/json",
-            },
-        )
-
         try:
-            with request.urlopen(http_request, timeout=30) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8")
-            raise CloudflareAPIError(f"Cloudflare API returned HTTP {exc.code}: {detail}") from exc
-        except error.URLError as exc:
-            raise CloudflareAPIError(f"Cloudflare API request failed: {exc.reason}") from exc
+            response = httpx.get(
+                f"{self.base_url}{path}",
+                headers={
+                    "Authorization": f"Bearer {self.api_token}",
+                    "Content-Type": "application/json",
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except httpx.HTTPStatusError as exc:
+            raise CloudflareAPIError(
+                f"Cloudflare API returned HTTP {exc.response.status_code}: {exc.response.text}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise CloudflareAPIError(f"Cloudflare API request failed: {exc}") from exc
+        except ValueError as exc:
+            raise CloudflareAPIError("Cloudflare API response was not valid JSON.") from exc
 
         if not isinstance(payload, dict):
             raise CloudflareAPIError("Cloudflare API response was not a JSON object.")

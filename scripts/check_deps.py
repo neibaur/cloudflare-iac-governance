@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404
 import sys
 from importlib import metadata, util
 
@@ -58,7 +58,7 @@ def main() -> int:
         exit_code = 1
     else:
         try:
-            completed = subprocess.run(
+            completed = subprocess.run(  # nosec B603
                 [terraform_path, "version"],
                 check=True,
                 capture_output=True,
