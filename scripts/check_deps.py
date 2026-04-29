@@ -25,6 +25,8 @@ def dependency_version(display_name: str) -> str | None:
     candidates = {
         "pytest": ("pytest",),
         "cloudflare": ("cloudflare",),
+        "ruff": ("ruff",),
+        "mypy": ("mypy",),
     }
 
     for package_name in candidates.get(display_name, (display_name,)):
@@ -73,6 +75,12 @@ def main() -> int:
         exit_code = 1
 
     if not check_python_dependency("cloudflare", ("cloudflare",)):
+        exit_code = 1
+
+    if not check_python_dependency("ruff", ("ruff",)):
+        exit_code = 1
+
+    if not check_python_dependency("mypy", ("mypy",)):
         exit_code = 1
 
     return exit_code
