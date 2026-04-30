@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import csv
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 from urllib.parse import quote
 
@@ -17,6 +20,15 @@ SECURITY_STANDARDS = {
     "always_use_https": "on",
     "bot_fight_mode": "on",
 }
+SECURITY_CSV_HEADERS = (
+    "domain_name",
+    "zone_id",
+    "ssl_mode",
+    "always_use_https",
+    "security_level",
+    "bot_fight_mode",
+    "is_compliant",
+)
 
 
 class CloudflareAuditor:
@@ -70,8 +82,9 @@ class CloudflareAuditor:
         print(hcl)
         return hcl
 
-    def audit_security_posture(self) -> list[dict[str, Any]]:
+    def audit_security_posture(self, report_dir: Path = Path(".")) -> list[dict[str, Any]]:
         zones = self._list_zones()
+        rows: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []
 
         for zone in sorted(zones, key=lambda item: cast(str, item["name"])):
@@ -81,6 +94,18 @@ class CloudflareAuditor:
                 for setting_id, value in settings.items()
                 if value != SECURITY_STANDARDS[setting_id]
             }
+            is_compliant = not deviations
+            rows.append(
+                {
+                    "domain_name": zone["name"],
+                    "zone_id": zone["id"],
+                    "ssl_mode": settings["ssl"],
+                    "always_use_https": settings["always_use_https"],
+                    "security_level": settings["security_level"],
+                    "bot_fight_mode": settings["bot_fight_mode"],
+                    "is_compliant": is_compliant,
+                }
+            )
 
             if deviations:
                 findings.append(
@@ -92,7 +117,8 @@ class CloudflareAuditor:
                     }
                 )
 
-        self._print_security_audit_report(len(zones), findings)
+        report_path = self._write_security_audit_csv(rows, report_dir)
+        self._print_security_audit_report(len(zones), findings, report_path)
         return findings
 
     def get_zone_security_settings(self, zone_id: str) -> dict[str, Any]:
@@ -265,10 +291,29 @@ class CloudflareAuditor:
         return "\n".join(lines)
 
     @staticmethod
-    def _print_security_audit_report(total_zones: int, findings: list[dict[str, Any]]) -> None:
+    @staticmethod
+    def _write_security_audit_csv(rows: list[dict[str, Any]], report_dir: Path) -> Path:
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / f"{timestamp}_security_compliance_report.csv"
+
+        with report_path.open("w", encoding="utf-8", newline="") as report_file:
+            writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        return report_path
+
+    @staticmethod
+    def _print_security_audit_report(
+        total_zones: int,
+        findings: list[dict[str, Any]],
+        report_path: Path,
+    ) -> None:
         print("Cloudflare Security Posture Audit")
         print(f"Domains audited: {total_zones}")
         print(f"Domains deviating from standards: {len(findings)}")
+        print(f"CSV report: {report_path}")
 
         if not findings:
             print("All audited domains meet the configured standards.")

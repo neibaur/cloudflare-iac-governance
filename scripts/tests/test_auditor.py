@@ -1,4 +1,4 @@
-from unittest.mock import call
+from unittest.mock import ANY, call
 
 import httpx
 import pytest
@@ -327,6 +327,11 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
             },
         ],
     )
+    csv_writer = mocker.patch.object(
+        auditor,
+        "_write_security_audit_csv",
+        return_value="20260430T120000Z_security_compliance_report.csv",
+    )
 
     findings = auditor.audit_security_posture()
 
@@ -351,7 +356,31 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
     output = capsys.readouterr().out
     assert "Domains audited: 2" in output
     assert "Domains deviating from standards: 1" in output
+    assert "CSV report: 20260430T120000Z_security_compliance_report.csv" in output
     assert "weak.example" in output
+    csv_writer.assert_called_once_with(
+        [
+            {
+                "domain_name": "secure.example",
+                "zone_id": "secure-zone",
+                "ssl_mode": "full",
+                "always_use_https": "on",
+                "security_level": "medium",
+                "bot_fight_mode": "on",
+                "is_compliant": True,
+            },
+            {
+                "domain_name": "weak.example",
+                "zone_id": "weak-zone",
+                "ssl_mode": "flexible",
+                "always_use_https": "off",
+                "security_level": "low",
+                "bot_fight_mode": "off",
+                "is_compliant": False,
+            },
+        ],
+        ANY,
+    )
 
 
 def test_zones_from_payload_rejects_failed_response():
