@@ -25,9 +25,12 @@ def compliance_percentage(report_path: Path) -> float:
 
 def discover_reports(root_dir: Path = DEFAULT_REPORT_DIR) -> list[Path]:
     return sorted(
-        path
-        for path in root_dir.rglob("*_security_compliance_report.csv")
-        if REPORT_PATTERN.match(path.name)
+        (
+            path
+            for path in root_dir.rglob("*_security_compliance_report.csv")
+            if REPORT_PATTERN.match(path.name)
+        ),
+        key=lambda path: path.name,
     )
 
 
