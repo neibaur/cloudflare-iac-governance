@@ -160,6 +160,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Google Cloud Service Account Key
+service_account.json
+
 # Spyder project settings
 .spyderproject
 .spyproject
