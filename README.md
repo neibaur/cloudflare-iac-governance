@@ -6,14 +6,33 @@ Cloudflare Infrastructure Management (IaC) for API and Terraform bulk retrieval 
 ```mermaid
 flowchart LR
     terraform[Terraform] --> actions[GitHub Actions]
-    actions --> python[Python Audit and Aggregation]
-    python --> sheets[Google Sheets Main Dataset]
+    actions --> audit[Python Compliance Audit]
+    audit --> decision{Drift detected and FIX_DETECTED_GAPS = Y?}
+    decision -- Yes --> apply[Terraform Apply with REAL_TFVARS]
+    apply --> reaudit[Second Compliance Audit]
+    reaudit --> verify{Gaps remain?}
+    verify -- Yes --> fail[Fail Workflow]
+    verify -- No --> aggregate[Python Aggregation]
+    decision -- No --> aggregate
+    aggregate --> sheets[Google Sheets Main Dataset]
     sheets --> looker[Looker Studio]
 ```
 
 The main CI workflow validates Terraform, runs the Cloudflare compliance audit,
 archives CSV reports, and syncs a privacy-safe aggregate dataset to the
 `Cloudflare_Compliance_Main` Google Sheet for BI dashboards.
+
+## Safety & Circuit Breakers
+
+Automated remediation is controlled by the GitHub Variable `FIX_DETECTED_GAPS`.
+When the value is `Y`, the workflow can materialize the private `REAL_TFVARS`
+secret just long enough to run `terraform apply` against real Cloudflare zones.
+When the variable is unset or set to `N`, the workflow audits, uploads reports,
+and syncs BI data without attempting changes.
+
+After remediation, the workflow immediately runs a second audit. If gaps remain,
+the build fails instead of retrying indefinitely. This makes failed remediation
+visible to the administrator and prevents an unsafe apply loop.
 
 ## How to Use
 
@@ -73,3 +92,7 @@ Aliases are assigned by sorting all discovered domains alphabetically across
 the audit history before numbering them. That keeps the mapping consistent
 across multiple audit files while preventing raw domain names and Cloudflare
 zone IDs from leaving the repository workflow.
+
+Remediation uses real secrets only inside the guarded Terraform apply step via
+`REAL_TFVARS`; the BI export remains anonymized. Google Sheets receives domain
+aliases and compliance posture only, never raw domain names or `zone_id` values.
