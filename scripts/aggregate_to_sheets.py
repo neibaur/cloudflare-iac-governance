@@ -8,27 +8,27 @@ from typing import Any, cast
 import gspread
 import pandas as pd
 
-AUDIT_HISTORY_DIR = Path("reports/audit_history")
+REPORTS_DIR = Path(os.path.abspath(os.path.join("reports")))
 SERVICE_ACCOUNT_FILE = Path("service_account.json")
 MAIN_SHEET_NAME = "Cloudflare_Compliance_Main"
 GOOGLE_SHEET_ID_ENV = "GOOGLE_SHEET_ID"
 REPORT_PATTERN = re.compile(r"^(?P<audit_date>\d{8}T\d{6}Z)_security_compliance_report\.csv$")
+LATEST_REPORT_NAME = "security_compliance_report.csv"
 SENSITIVE_COLUMNS = ("zone_id",)
 
 
-def discover_audit_reports(audit_history_dir: Path = AUDIT_HISTORY_DIR) -> list[Path]:
+def discover_audit_reports(reports_dir: Path = REPORTS_DIR) -> list[Path]:
     return sorted(
-        (
-            path
-            for path in audit_history_dir.glob("*_security_compliance_report.csv")
-            if REPORT_PATTERN.match(path.name)
-        ),
+        (path for path in reports_dir.rglob("*.csv") if "security_compliance_report" in path.name),
         key=lambda path: path.name,
     )
 
 
 def audit_date_from_filename(report_path: Path) -> str:
     match = REPORT_PATTERN.match(report_path.name)
+    if match is None and report_path.name == LATEST_REPORT_NAME:
+        return "latest"
+
     if match is None:
         raise ValueError(f"Report filename does not include a UTC audit timestamp: {report_path}")
 
@@ -41,18 +41,22 @@ def build_domain_aliases(domain_names: pd.Series) -> dict[str, str]:
     return {domain: f"Domain {index:0{width}d}" for index, domain in enumerate(domains, start=1)}
 
 
-def aggregate_reports(audit_history_dir: Path = AUDIT_HISTORY_DIR) -> pd.DataFrame:
+def aggregate_reports(reports_dir: Path = REPORTS_DIR) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
-    for report_path in discover_audit_reports(audit_history_dir):
+    for report_path in discover_audit_reports(reports_dir):
         frame = pd.read_csv(report_path)
+        print(f"Discovered report: {report_path} ({len(frame)} rows)")
         frame.insert(0, "audit_date", audit_date_from_filename(report_path))
         frame = frame.drop(columns=list(SENSITIVE_COLUMNS), errors="ignore")
         frames.append(frame)
 
     if not frames:
-        return pd.DataFrame()
+        raise RuntimeError(f"No compliance CSV reports found in {reports_dir}.")
 
     aggregated = pd.concat(frames, ignore_index=True)
+    if aggregated.empty:
+        raise RuntimeError(f"Compliance CSV reports in {reports_dir} did not contain any rows.")
+
     if "domain_name" in aggregated.columns:
         domain_aliases = build_domain_aliases(aggregated["domain_name"])
         aggregated["domain_name"] = aggregated["domain_name"].map(domain_aliases)

@@ -25,7 +25,8 @@ def write_report(path: Path, rows: list[dict[str, object]]) -> None:
 
 
 def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
-    history_dir = report_workspace / "reports" / "audit_history"
+    reports_dir = report_workspace / "reports"
+    history_dir = reports_dir / "audit_history"
     history_dir.mkdir(parents=True)
     write_report(
         history_dir / "20260430T020000Z_security_compliance_report.csv",
@@ -56,26 +57,69 @@ def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
         ],
     )
 
-    aggregated = aggregate_to_sheets.aggregate_reports(history_dir)
+    write_report(
+        reports_dir / "security_compliance_report.csv",
+        [
+            {
+                "domain_name": "zeta.example",
+                "zone_id": "zone-zeta",
+                "ssl_mode": "full",
+                "is_compliant": True,
+            }
+        ],
+    )
+
+    aggregated = aggregate_to_sheets.aggregate_reports(reports_dir)
 
     assert "zone_id" not in aggregated.columns
     assert aggregated["audit_date"].tolist() == [
         "20260430T010000Z",
         "20260430T020000Z",
         "20260430T020000Z",
+        "latest",
     ]
-    assert aggregated["domain_name"].tolist() == ["Domain 01", "Domain 02", "Domain 01"]
+    assert aggregated["domain_name"].tolist() == [
+        "Domain 01",
+        "Domain 02",
+        "Domain 01",
+        "Domain 02",
+    ]
 
 
-def test_aggregate_reports_ignores_non_utc_csvs(report_workspace):
-    history_dir = report_workspace / "reports" / "audit_history"
-    history_dir.mkdir(parents=True)
+def test_aggregate_reports_logs_each_discovered_file(report_workspace, capsys):
+    reports_dir = report_workspace / "reports"
+    reports_dir.mkdir()
     write_report(
-        history_dir / "security_compliance_report.csv",
-        [{"domain_name": "ignored.example", "zone_id": "zone-id"}],
+        reports_dir / "security_compliance_report.csv",
+        [{"domain_name": "example.test", "zone_id": "zone-id"}],
     )
 
-    assert aggregate_to_sheets.aggregate_reports(history_dir).empty
+    aggregate_to_sheets.aggregate_reports(reports_dir)
+
+    output = capsys.readouterr().out
+    assert "Discovered report:" in output
+    assert "security_compliance_report.csv (1 rows)" in output
+
+
+def test_aggregate_reports_fails_when_no_matching_csvs(report_workspace):
+    reports_dir = report_workspace / "reports"
+    reports_dir.mkdir()
+    write_report(reports_dir / "other_report.csv", [{"domain_name": "ignored.example"}])
+
+    with pytest.raises(RuntimeError, match="No compliance CSV reports found"):
+        aggregate_to_sheets.aggregate_reports(reports_dir)
+
+
+def test_aggregate_reports_fails_when_matching_csvs_are_empty(report_workspace):
+    reports_dir = report_workspace / "reports"
+    reports_dir.mkdir()
+    (reports_dir / "security_compliance_report.csv").write_text(
+        "domain_name,zone_id,is_compliant\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="did not contain any rows"):
+        aggregate_to_sheets.aggregate_reports(reports_dir)
 
 
 def test_sync_to_google_sheets_overwrites_main_sheet(mocker):
