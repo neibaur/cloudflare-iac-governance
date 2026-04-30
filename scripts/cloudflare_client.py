@@ -28,6 +28,7 @@ SECURITY_CSV_HEADERS = (
     "bot_fight_mode",
     "is_compliant",
 )
+LATEST_SECURITY_REPORT = "security_compliance_report.csv"
 
 
 class CloudflareAuditor:
@@ -310,8 +311,14 @@ class CloudflareAuditor:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         report_dir.mkdir(parents=True, exist_ok=True)
         report_path = report_dir / f"{timestamp}_security_compliance_report.csv"
+        latest_report_path = report_dir / LATEST_SECURITY_REPORT
 
         with report_path.open("w", encoding="utf-8", newline="") as report_file:
+            writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        with latest_report_path.open("w", encoding="utf-8", newline="") as report_file:
             writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
             writer.writeheader()
             writer.writerows(rows)
@@ -334,9 +341,7 @@ class CloudflareAuditor:
             return
 
         print("")
-        print(
-            "Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Deviations"
-        )
+        print("Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Deviations")
         print("-" * 86)
 
         for finding in findings:

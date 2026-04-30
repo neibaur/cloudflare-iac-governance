@@ -44,3 +44,15 @@ jobs:
 
       - name: Terraform plan
         run: terraform -chdir=terraform plan -input=false
+
+      - name: Run compliance audit
+        run: python run_tools.py --audit
+
+      - name: Upload compliance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-compliance-report
+          path: |
+            security_compliance_report.csv
+            *_security_compliance_report.csv
+          if-no-files-found: error

@@ -20,9 +20,7 @@ def test_verify_connection_returns_token_status(mock_cloudflare_token_verify):
         "id": "token-id",
         "status": "active",
     }
-    mock_cloudflare_token_verify.assert_called_once_with(
-        "/accounts/test-account-id/tokens/verify"
-    )
+    mock_cloudflare_token_verify.assert_called_once_with("/accounts/test-account-id/tokens/verify")
 
 
 def test_verify_connection_reports_invalid_token_helpfully(mocker):

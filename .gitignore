@@ -52,6 +52,7 @@ coverage.xml
 pytest-cache-files-*/
 cover/
 *_security_compliance_report.csv
+security_compliance_report.csv
 
 # Translations
 *.mo
