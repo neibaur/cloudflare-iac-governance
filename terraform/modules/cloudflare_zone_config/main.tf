@@ -21,5 +21,10 @@ resource "cloudflare_zone_settings_override" "this" {
 
 resource "cloudflare_bot_management" "this" {
   zone_id    = var.zone_id
+  enable_js  = true
   fight_mode = var.bot_fight_mode == "on"
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }

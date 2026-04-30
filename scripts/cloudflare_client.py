@@ -12,7 +12,6 @@ SECURITY_SETTING_IDS = (
     "ssl",
     "security_level",
     "always_use_https",
-    "bot_fight_mode",
 )
 SECURITY_STANDARDS = {
     "ssl": "full",
@@ -127,19 +126,35 @@ class CloudflareAuditor:
 
         settings: dict[str, Any] = {}
         for setting_id in SECURITY_SETTING_IDS:
-            try:
-                settings[setting_id] = self._setting_value(
-                    self._get_zone_setting(zone_id, setting_id),
-                    setting_id,
-                )
-            except CloudflareAPIError as exc:
-                if setting_id == "bot_fight_mode" and "Undefined zone setting" in str(exc):
-                    settings[setting_id] = "off"
-                    continue
+            settings[setting_id] = self._setting_value(
+                self._get_zone_setting(zone_id, setting_id),
+                setting_id,
+            )
 
-                raise
-
+        settings["bot_fight_mode"] = self._get_bot_fight_mode(zone_id)
         return settings
+
+    def _get_bot_fight_mode(self, zone_id: str) -> str:
+        payload = self._request(f"/zones/{zone_id}/bot_management")
+
+        if not payload.get("success", False):
+            errors = payload.get("errors") or []
+            raise CloudflareAPIError(f"Cloudflare bot management request failed: {errors}")
+
+        result = payload.get("result")
+        if not result:
+            return "off"
+
+        if not isinstance(result, dict):
+            raise CloudflareAPIError(
+                "Cloudflare bot management response did not include a result object."
+            )
+
+        fight_mode = result.get("fight_mode")
+        if isinstance(fight_mode, str):
+            return "on" if fight_mode.lower() in {"on", "true", "enabled"} else "off"
+
+        return "on" if fight_mode is True else "off"
 
     def _get_zone_setting(self, zone_id: str, setting_id: str) -> dict[str, Any]:
         payload = self._request(f"/zones/{zone_id}/settings/{setting_id}")
@@ -290,7 +305,6 @@ class CloudflareAuditor:
         lines.append("}")
         return "\n".join(lines)
 
-    @staticmethod
     @staticmethod
     def _write_security_audit_csv(rows: list[dict[str, Any]], report_dir: Path) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")

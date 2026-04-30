@@ -85,11 +85,11 @@ def mock_cloudflare(mocker, cloudflare_fixture_data):
             "messages": [],
             "result": {"id": "always_use_https", "value": "on"},
         },
-        f"/zones/{cloudflare_fixture_data.zone_id}/settings/bot_fight_mode": {
+        f"/zones/{cloudflare_fixture_data.zone_id}/bot_management": {
             "success": True,
             "errors": [],
             "messages": [],
-            "result": {"id": "bot_fight_mode", "value": "on"},
+            "result": {"fight_mode": True, "enable_js": True},
         },
     }
 

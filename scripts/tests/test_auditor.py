@@ -63,9 +63,7 @@ def test_get_zone_security_settings_parses_successful_response(
     mock_cloudflare.assert_any_call(
         f"/zones/{cloudflare_fixture_data.zone_id}/settings/always_use_https"
     )
-    mock_cloudflare.assert_any_call(
-        f"/zones/{cloudflare_fixture_data.zone_id}/settings/bot_fight_mode"
-    )
+    mock_cloudflare.assert_any_call(f"/zones/{cloudflare_fixture_data.zone_id}/bot_management")
 
 
 def test_get_zone_security_settings_requires_zone_id():
@@ -75,15 +73,13 @@ def test_get_zone_security_settings_requires_zone_id():
         auditor.get_zone_security_settings("")
 
 
-def test_get_zone_security_settings_treats_undefined_bot_mode_as_off(
-    mocker,
-    cloudflare_fixture_data,
-):
+def test_get_zone_security_settings_reads_bot_management(mocker, cloudflare_fixture_data):
     def request(path):
-        if path.endswith("/settings/bot_fight_mode"):
-            raise CloudflareAPIError(
-                'Cloudflare API returned HTTP 400: {"message":"Undefined zone setting"}'
-            )
+        if path.endswith("/bot_management"):
+            return {
+                "success": True,
+                "result": {"fight_mode": True, "enable_js": True},
+            }
 
         setting_id = path.rsplit("/", maxsplit=1)[-1]
         return {
@@ -106,7 +102,18 @@ def test_get_zone_security_settings_treats_undefined_bot_mode_as_off(
 
     settings = auditor.get_zone_security_settings(cloudflare_fixture_data.zone_id)
 
-    assert settings["bot_fight_mode"] == "off"
+    assert settings["bot_fight_mode"] == "on"
+
+
+@pytest.mark.parametrize("result", [None, {}])
+def test_get_bot_fight_mode_treats_empty_response_as_off(mocker, result):
+    mocker.patch(
+        "scripts.cloudflare_client.CloudflareAuditor._request",
+        return_value={"success": True, "result": result},
+    )
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
+
+    assert auditor._get_bot_fight_mode("zone-id") == "off"
 
 
 def test_get_zone_setting_reports_cloudflare_error(mocker, cloudflare_fixture_data):
