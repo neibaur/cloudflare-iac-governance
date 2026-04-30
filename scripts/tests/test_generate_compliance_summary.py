@@ -4,7 +4,7 @@ from scripts import generate_compliance_summary
 
 
 class FakeReportRoot:
-    def glob(self, pattern):
+    def rglob(self, pattern):
         assert pattern == "*_security_compliance_report.csv"
         return [
             Path("security_compliance_report.csv"),

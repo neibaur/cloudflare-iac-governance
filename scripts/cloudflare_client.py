@@ -29,6 +29,7 @@ SECURITY_CSV_HEADERS = (
     "is_compliant",
 )
 LATEST_SECURITY_REPORT = "security_compliance_report.csv"
+DEFAULT_REPORT_DIR = Path("reports")
 
 
 class CloudflareAuditor:
@@ -82,7 +83,10 @@ class CloudflareAuditor:
         print(hcl)
         return hcl
 
-    def audit_security_posture(self, report_dir: Path = Path(".")) -> list[dict[str, Any]]:
+    def audit_security_posture(
+        self,
+        report_dir: Path = DEFAULT_REPORT_DIR,
+    ) -> list[dict[str, Any]]:
         zones = self._list_zones()
         rows: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []

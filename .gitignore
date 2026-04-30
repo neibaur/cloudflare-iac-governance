@@ -152,7 +152,6 @@ activemq-data/
 
 # Environments
 .env
-.env.example
 .envrc
 .venv
 env/
@@ -225,6 +224,7 @@ __marimo__/
 **/*.tfstate*
 **/.terraform/
 **/*.tfvars
+!terraform/ci.auto.tfvars
 terraform/terraform.tfvars
 terraform/secrets.auto.tfvars
 .terraform.lock.hcl

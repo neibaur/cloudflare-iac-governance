@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from scripts.cloudflare_client import CloudflareAuditor
 
 ENV_FILE = Path(".env")
+REPORT_DIR = Path("reports")
 CLOUDFLARE_API_TOKEN = "CLOUDFLARE_API_TOKEN"
 CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
 
@@ -58,7 +59,7 @@ def main() -> int:
         return 0
 
     if args.audit:
-        auditor.audit_security_posture()
+        auditor.audit_security_posture(REPORT_DIR)
         return 0
 
     return 1

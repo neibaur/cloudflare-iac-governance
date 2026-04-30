@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 REPORT_PATTERN = re.compile(r"^\d{8}T\d{6}Z_security_compliance_report\.csv$")
+DEFAULT_REPORT_DIR = Path("reports")
 
 
 def is_compliant_value(value: str) -> bool:
@@ -22,15 +23,15 @@ def compliance_percentage(report_path: Path) -> float:
     return compliant_count / len(rows) * 100
 
 
-def discover_reports(root_dir: Path = Path(".")) -> list[Path]:
+def discover_reports(root_dir: Path = DEFAULT_REPORT_DIR) -> list[Path]:
     return sorted(
         path
-        for path in root_dir.glob("*_security_compliance_report.csv")
+        for path in root_dir.rglob("*_security_compliance_report.csv")
         if REPORT_PATTERN.match(path.name)
     )
 
 
-def compliance_trend(root_dir: Path = Path(".")) -> str:
+def compliance_trend(root_dir: Path = DEFAULT_REPORT_DIR) -> str:
     reports = discover_reports(root_dir)
     if not reports:
         return "No UTC-stamped compliance reports found."
@@ -44,7 +45,7 @@ def compliance_trend(root_dir: Path = Path(".")) -> str:
 
 
 def main() -> int:
-    print(compliance_trend())
+    print(compliance_trend(DEFAULT_REPORT_DIR))
     return 0
 
 

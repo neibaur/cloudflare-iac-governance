@@ -43,16 +43,15 @@ jobs:
         run: terraform -chdir=terraform validate
 
       - name: Terraform plan
-        run: terraform -chdir=terraform plan -input=false
+        run: terraform -chdir=terraform plan -input=false -var-file=ci.auto.tfvars
 
       - name: Run compliance audit
         run: python run_tools.py --audit
 
-      - name: Upload compliance report
+      - name: Upload compliance reports
         uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: security-compliance-report
-          path: |
-            security_compliance_report.csv
-            *_security_compliance_report.csv
+          name: security-compliance-reports
+          path: reports/
           if-no-files-found: error
