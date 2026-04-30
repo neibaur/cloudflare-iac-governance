@@ -10,8 +10,10 @@ variable "domains" {
   type = map(object({
     zone_id                 = string
     ssl                     = optional(string, "full")
+    security_level          = optional(string, "medium")
     always_use_https        = optional(string, "on")
     min_tls_version         = optional(string, "1.2")
     browser_integrity_check = optional(string, "on")
+    bot_fight_mode          = optional(string, "on")
   }))
 }

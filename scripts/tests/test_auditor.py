@@ -51,10 +51,18 @@ def test_get_zone_security_settings_parses_successful_response(
 
     assert settings == {
         "ssl": "full",
+        "security_level": "medium",
+        "always_use_https": "on",
         "bot_fight_mode": "on",
     }
-    assert mock_cloudflare.call_count == 2
+    assert mock_cloudflare.call_count == 4
     mock_cloudflare.assert_any_call(f"/zones/{cloudflare_fixture_data.zone_id}/settings/ssl")
+    mock_cloudflare.assert_any_call(
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/security_level"
+    )
+    mock_cloudflare.assert_any_call(
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/always_use_https"
+    )
     mock_cloudflare.assert_any_call(
         f"/zones/{cloudflare_fixture_data.zone_id}/settings/bot_fight_mode"
     )
@@ -65,6 +73,40 @@ def test_get_zone_security_settings_requires_zone_id():
 
     with pytest.raises(ValueError, match="zone_id is required"):
         auditor.get_zone_security_settings("")
+
+
+def test_get_zone_security_settings_treats_undefined_bot_mode_as_off(
+    mocker,
+    cloudflare_fixture_data,
+):
+    def request(path):
+        if path.endswith("/settings/bot_fight_mode"):
+            raise CloudflareAPIError(
+                'Cloudflare API returned HTTP 400: {"message":"Undefined zone setting"}'
+            )
+
+        setting_id = path.rsplit("/", maxsplit=1)[-1]
+        return {
+            "success": True,
+            "result": {
+                "id": setting_id,
+                "value": {
+                    "ssl": "full",
+                    "security_level": "medium",
+                    "always_use_https": "on",
+                }[setting_id],
+            },
+        }
+
+    mocker.patch(
+        "scripts.cloudflare_client.CloudflareAuditor._request",
+        side_effect=request,
+    )
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
+
+    settings = auditor.get_zone_security_settings(cloudflare_fixture_data.zone_id)
+
+    assert settings["bot_fight_mode"] == "off"
 
 
 def test_get_zone_setting_reports_cloudflare_error(mocker, cloudflare_fixture_data):
@@ -255,6 +297,61 @@ def test_list_all_zones_reports_missing_zone_read(mocker):
 
     with pytest.raises(CloudflareAPIError, match="Zone:Read"):
         auditor.list_all_zones()
+
+
+def test_audit_security_posture_reports_deviations(mocker, capsys):
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
+    mocker.patch.object(
+        auditor,
+        "_list_zones",
+        return_value=[
+            {"name": "secure.example", "id": "secure-zone"},
+            {"name": "weak.example", "id": "weak-zone"},
+        ],
+    )
+    mocker.patch.object(
+        auditor,
+        "get_zone_security_settings",
+        side_effect=[
+            {
+                "ssl": "full",
+                "security_level": "medium",
+                "always_use_https": "on",
+                "bot_fight_mode": "on",
+            },
+            {
+                "ssl": "flexible",
+                "security_level": "low",
+                "always_use_https": "off",
+                "bot_fight_mode": "off",
+            },
+        ],
+    )
+
+    findings = auditor.audit_security_posture()
+
+    assert findings == [
+        {
+            "domain": "weak.example",
+            "zone_id": "weak-zone",
+            "settings": {
+                "ssl": "flexible",
+                "security_level": "low",
+                "always_use_https": "off",
+                "bot_fight_mode": "off",
+            },
+            "deviations": {
+                "ssl": "flexible",
+                "security_level": "low",
+                "always_use_https": "off",
+                "bot_fight_mode": "off",
+            },
+        }
+    ]
+    output = capsys.readouterr().out
+    assert "Domains audited: 2" in output
+    assert "Domains deviating from standards: 1" in output
+    assert "weak.example" in output
 
 
 def test_zones_from_payload_rejects_failed_response():

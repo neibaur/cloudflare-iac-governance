@@ -73,6 +73,18 @@ def mock_cloudflare(mocker, cloudflare_fixture_data):
             "messages": [],
             "result": {"id": "ssl", "value": "full"},
         },
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/security_level": {
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {"id": "security_level", "value": "medium"},
+        },
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/always_use_https": {
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {"id": "always_use_https", "value": "on"},
+        },
         f"/zones/{cloudflare_fixture_data.zone_id}/settings/bot_fight_mode": {
             "success": True,
             "errors": [],

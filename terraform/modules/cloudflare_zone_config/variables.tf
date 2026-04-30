@@ -24,6 +24,12 @@ variable "ssl" {
   default     = "full"
 }
 
+variable "security_level" {
+  description = "Cloudflare security level for the zone."
+  type        = string
+  default     = "medium"
+}
+
 variable "always_use_https" {
   description = "Whether Cloudflare should redirect HTTP requests to HTTPS."
   type        = string
@@ -38,6 +44,12 @@ variable "min_tls_version" {
 
 variable "browser_integrity_check" {
   description = "Browser Integrity Check status for the zone."
+  type        = string
+  default     = "on"
+}
+
+variable "bot_fight_mode" {
+  description = "Whether Cloudflare Bot Fight Mode should be enabled."
   type        = string
   default     = "on"
 }

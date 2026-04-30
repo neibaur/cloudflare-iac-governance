@@ -5,6 +5,19 @@ from urllib.parse import quote
 
 import httpx
 
+SECURITY_SETTING_IDS = (
+    "ssl",
+    "security_level",
+    "always_use_https",
+    "bot_fight_mode",
+)
+SECURITY_STANDARDS = {
+    "ssl": "full",
+    "security_level": "medium",
+    "always_use_https": "on",
+    "bot_fight_mode": "on",
+}
+
 
 class CloudflareAuditor:
     """Read-only Cloudflare audit client using a scoped API token."""
@@ -52,33 +65,55 @@ class CloudflareAuditor:
         return result
 
     def list_all_zones(self) -> str:
-        first_payload = self._assert_zone_read_permission()
-        zones = self._zones_from_payload(first_payload)
-        result_info = first_payload.get("result_info")
-        total_pages = self._total_pages(result_info)
-
-        for page in range(2, total_pages + 1):
-            payload = self._request(self._zones_path(page))
-            zones.extend(self._zones_from_payload(payload))
-
+        zones = self._list_zones()
         hcl = self._zones_to_hcl(zones)
         print(hcl)
         return hcl
+
+    def audit_security_posture(self) -> list[dict[str, Any]]:
+        zones = self._list_zones()
+        findings: list[dict[str, Any]] = []
+
+        for zone in sorted(zones, key=lambda item: cast(str, item["name"])):
+            settings = self.get_zone_security_settings(cast(str, zone["id"]))
+            deviations = {
+                setting_id: value
+                for setting_id, value in settings.items()
+                if value != SECURITY_STANDARDS[setting_id]
+            }
+
+            if deviations:
+                findings.append(
+                    {
+                        "domain": zone["name"],
+                        "zone_id": zone["id"],
+                        "settings": settings,
+                        "deviations": deviations,
+                    }
+                )
+
+        self._print_security_audit_report(len(zones), findings)
+        return findings
 
     def get_zone_security_settings(self, zone_id: str) -> dict[str, Any]:
         if not zone_id:
             raise ValueError("zone_id is required.")
 
-        ssl_setting = self._get_zone_setting(zone_id, "ssl")
-        bot_fight_mode_setting = self._get_zone_setting(zone_id, "bot_fight_mode")
+        settings: dict[str, Any] = {}
+        for setting_id in SECURITY_SETTING_IDS:
+            try:
+                settings[setting_id] = self._setting_value(
+                    self._get_zone_setting(zone_id, setting_id),
+                    setting_id,
+                )
+            except CloudflareAPIError as exc:
+                if setting_id == "bot_fight_mode" and "Undefined zone setting" in str(exc):
+                    settings[setting_id] = "off"
+                    continue
 
-        return {
-            "ssl": self._setting_value(ssl_setting, "ssl"),
-            "bot_fight_mode": self._setting_value(
-                bot_fight_mode_setting,
-                "bot_fight_mode",
-            ),
-        }
+                raise
+
+        return settings
 
     def _get_zone_setting(self, zone_id: str, setting_id: str) -> dict[str, Any]:
         payload = self._request(f"/zones/{zone_id}/settings/{setting_id}")
@@ -142,6 +177,18 @@ class CloudflareAuditor:
             raise CloudflareAPIError(
                 "Unable to list zones. Confirm the token includes Zone:Read permissions."
             ) from exc
+
+    def _list_zones(self) -> list[dict[str, Any]]:
+        first_payload = self._assert_zone_read_permission()
+        zones = self._zones_from_payload(first_payload)
+        result_info = first_payload.get("result_info")
+        total_pages = self._total_pages(result_info)
+
+        for page in range(2, total_pages + 1):
+            payload = self._request(self._zones_path(page))
+            zones.extend(self._zones_from_payload(payload))
+
+        return zones
 
     @property
     def _account_path(self) -> str:
@@ -216,6 +263,38 @@ class CloudflareAuditor:
 
         lines.append("}")
         return "\n".join(lines)
+
+    @staticmethod
+    def _print_security_audit_report(total_zones: int, findings: list[dict[str, Any]]) -> None:
+        print("Cloudflare Security Posture Audit")
+        print(f"Domains audited: {total_zones}")
+        print(f"Domains deviating from standards: {len(findings)}")
+
+        if not findings:
+            print("All audited domains meet the configured standards.")
+            return
+
+        print("")
+        print(
+            "Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Deviations"
+        )
+        print("-" * 86)
+
+        for finding in findings:
+            settings = cast(dict[str, Any], finding["settings"])
+            deviations = cast(dict[str, Any], finding["deviations"])
+            deviation_summary = ", ".join(
+                f"{key}={value} expected {SECURITY_STANDARDS[key]}"
+                for key, value in deviations.items()
+            )
+            print(
+                f"{finding['domain']} | "
+                f"{settings['ssl']} | "
+                f"{settings['security_level']} | "
+                f"{settings['always_use_https']} | "
+                f"{settings['bot_fight_mode']} | "
+                f"{deviation_summary}"
+            )
 
 
 class CloudflareAPIError(RuntimeError):

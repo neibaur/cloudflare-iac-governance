@@ -36,6 +36,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print Terraform HCL for accessible zones.",
     )
+    actions.add_argument(
+        "--audit",
+        action="store_true",
+        help="Audit Cloudflare zone security settings.",
+    )
     return parser.parse_args()
 
 
@@ -50,6 +55,10 @@ def main() -> int:
 
     if args.list:
         auditor.list_all_zones()
+        return 0
+
+    if args.audit:
+        auditor.audit_security_posture()
         return 0
 
     return 1
