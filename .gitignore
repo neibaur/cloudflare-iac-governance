@@ -49,7 +49,10 @@ coverage.xml
 *.py.cover
 .hypothesis/
 .pytest_cache/
+pytest-cache-files-*/
 cover/
+*_security_compliance_report.csv
+security_compliance_report.csv
 
 # Translations
 *.mo
@@ -216,3 +219,12 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Terraform
+**/*.tfstate*
+**/.terraform/
+**/*.tfvars
+!terraform/ci.auto.tfvars
+terraform/terraform.tfvars
+terraform/secrets.auto.tfvars
+.terraform.lock.hcl

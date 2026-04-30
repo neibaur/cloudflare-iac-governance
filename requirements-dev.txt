@@ -1,0 +1,9 @@
+-r requirements.txt
+
+bandit
+detect-secrets
+mypy
+pytest
+pytest-cov
+pytest-mock
+ruff

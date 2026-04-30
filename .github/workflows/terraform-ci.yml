@@ -1,0 +1,57 @@
+name: Terraform CI
+
+on:
+  push:
+    branches:
+      - "**"
+
+jobs:
+  quality-and-plan:
+    runs-on: ubuntu-latest
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      TF_VAR_cloudflare_account_id: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Run quality gate
+        run: python scripts/run_all_checks.py
+
+      - name: Terraform init
+        run: terraform -chdir=terraform init -backend=false
+
+      - name: Terraform validate
+        run: terraform -chdir=terraform validate
+
+      - name: Terraform plan
+        run: terraform -chdir=terraform plan -input=false -var-file=ci.auto.tfvars
+
+      - name: Run compliance audit
+        run: python run_tools.py --audit
+
+      - name: Upload compliance reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-compliance-reports
+          path: reports/
+          if-no-files-found: error
