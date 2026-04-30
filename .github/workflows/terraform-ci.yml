@@ -54,6 +54,7 @@ jobs:
       - name: Sync compliance reports to Google Sheets
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
         run: |
           trap 'rm -f service_account.json' EXIT
           echo "$GCP_SERVICE_ACCOUNT_KEY" > service_account.json

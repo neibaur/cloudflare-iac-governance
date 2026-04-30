@@ -82,7 +82,7 @@ def test_sync_to_google_sheets_overwrites_main_sheet(mocker):
     worksheet = mocker.Mock(name="worksheet")
     spreadsheet = mocker.Mock(name="spreadsheet", sheet1=worksheet)
     client = mocker.Mock(name="client")
-    client.open.return_value = spreadsheet
+    client.open_by_key.return_value = spreadsheet
     service_account = mocker.patch(
         "scripts.aggregate_to_sheets.gspread.service_account",
         return_value=client,
@@ -97,11 +97,22 @@ def test_sync_to_google_sheets_overwrites_main_sheet(mocker):
         ]
     )
 
-    aggregate_to_sheets.sync_to_google_sheets(dataframe, Path("service_account.json"))
+    aggregate_to_sheets.sync_to_google_sheets(
+        dataframe,
+        Path("service_account.json"),
+        spreadsheet_id="sheet-id-123",
+    )
 
     service_account.assert_called_once_with(filename="service_account.json")
-    client.open.assert_called_once_with("Cloudflare_Compliance_Main")
+    client.open_by_key.assert_called_once_with("sheet-id-123")
     worksheet.clear.assert_called_once_with()
     worksheet.update.assert_called_once_with(
         [["audit_date", "domain_name", "is_compliant"], ["20260430T010000Z", "Domain 01", True]]
     )
+
+
+def test_sync_to_google_sheets_requires_sheet_id(monkeypatch):
+    monkeypatch.delenv("GOOGLE_SHEET_ID", raising=False)
+
+    with pytest.raises(RuntimeError, match="GOOGLE_SHEET_ID"):
+        aggregate_to_sheets.sync_to_google_sheets(pd.DataFrame())

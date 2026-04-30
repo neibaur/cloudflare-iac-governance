@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 from typing import Any, cast
@@ -10,6 +11,7 @@ import pandas as pd
 AUDIT_HISTORY_DIR = Path("reports/audit_history")
 SERVICE_ACCOUNT_FILE = Path("service_account.json")
 MAIN_SHEET_NAME = "Cloudflare_Compliance_Main"
+GOOGLE_SHEET_ID_ENV = "GOOGLE_SHEET_ID"
 REPORT_PATTERN = re.compile(r"^(?P<audit_date>\d{8}T\d{6}Z)_security_compliance_report\.csv$")
 SENSITIVE_COLUMNS = ("zone_id",)
 
@@ -72,22 +74,26 @@ def sheet_rows(dataframe: pd.DataFrame) -> list[list[Any]]:
 def sync_to_google_sheets(
     dataframe: pd.DataFrame,
     credentials_path: Path = SERVICE_ACCOUNT_FILE,
-    sheet_name: str = MAIN_SHEET_NAME,
+    spreadsheet_id: str | None = None,
 ) -> None:
+    sheet_id = spreadsheet_id or os.getenv(GOOGLE_SHEET_ID_ENV)
+    if not sheet_id:
+        raise RuntimeError(f"{GOOGLE_SHEET_ID_ENV} is required to sync compliance data.")
+
     client = gspread.service_account(filename=str(credentials_path))
-    spreadsheet = client.open(sheet_name)
+    spreadsheet = client.open_by_key(sheet_id)
     worksheet = spreadsheet.sheet1
     rows = sheet_rows(dataframe)
 
     worksheet.clear()
     if rows:
         worksheet.update(rows)
+    print(f"Success: wrote {len(dataframe)} compliance rows to Google Sheet ID {sheet_id}.")
 
 
 def main() -> int:
     dataframe = aggregate_reports()
     sync_to_google_sheets(dataframe)
-    print(f"Synced {len(dataframe)} compliance rows to {MAIN_SHEET_NAME}.")
     return 0
 
 
