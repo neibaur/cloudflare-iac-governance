@@ -98,7 +98,7 @@ class CloudflareAuditor:
                 for setting_id, value in settings.items()
                 if value != SECURITY_STANDARDS[setting_id]
             }
-            is_compliant = not deviations
+            is_compliant = int(not deviations)
             rows.append(
                 {
                     "domain_name": zone["name"],

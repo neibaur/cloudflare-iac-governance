@@ -1,3 +1,5 @@
 cloudflare
+gspread
 httpx
+pandas
 python-dotenv

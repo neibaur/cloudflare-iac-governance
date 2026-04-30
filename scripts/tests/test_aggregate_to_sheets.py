@@ -1,0 +1,259 @@
+import os
+import shutil
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pandas as pd
+import pytest
+
+from scripts import aggregate_to_sheets
+
+UTC_PATTERN = r"^\d{8}T\d{6}Z$"
+
+
+@pytest.fixture
+def report_workspace():
+    root = Path("pytest-cache-files-sheets")
+    if root.exists():
+        shutil.rmtree(root)
+    root.mkdir()
+
+    yield root
+
+    shutil.rmtree(root, ignore_errors=True)
+
+
+def write_report(path: Path, rows: list[dict[str, object]]) -> None:
+    dataframe = pd.DataFrame(rows)
+    dataframe.to_csv(path, index=False)
+
+
+def set_mtime(path: Path, value: str) -> None:
+    timestamp = datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC).timestamp()
+    path.touch()
+    os.utime(path, (timestamp, timestamp))
+
+
+def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
+    reports_dir = report_workspace / "reports"
+    history_dir = reports_dir / "audit_history"
+    history_dir.mkdir(parents=True)
+    write_report(
+        history_dir / "20260430T020000Z_security_compliance_report.csv",
+        [
+            {
+                "domain_name": "zeta.example",
+                "zone_id": "zone-zeta",
+                "ssl_mode": "full",
+                "is_compliant": True,
+            },
+            {
+                "domain_name": "alpha.example",
+                "zone_id": "zone-alpha",
+                "ssl_mode": "full",
+                "is_compliant": False,
+            },
+        ],
+    )
+    write_report(
+        history_dir / "20260430T010000Z_security_compliance_report.csv",
+        [
+            {
+                "domain_name": "alpha.example",
+                "zone_id": "zone-alpha",
+                "ssl_mode": "flexible",
+                "is_compliant": False,
+            }
+        ],
+    )
+
+    latest_report = reports_dir / "security_compliance_report.csv"
+    write_report(
+        latest_report,
+        [
+            {
+                "domain_name": "zeta.example",
+                "zone_id": "zone-zeta",
+                "ssl_mode": "full",
+                "is_compliant": True,
+            }
+        ],
+    )
+    set_mtime(latest_report, "20260430T030000Z")
+
+    aggregated = aggregate_to_sheets.aggregate_reports(reports_dir)
+
+    assert "zone_id" not in aggregated.columns
+    assert aggregated["audit_date"].tolist() == [
+        "20260430T010000Z",
+        "20260430T020000Z",
+        "20260430T020000Z",
+        "20260430T030000Z",
+    ]
+    assert aggregated["audit_date"].str.match(UTC_PATTERN).all()
+    assert aggregated["domain_name"].tolist() == [
+        "Domain 01",
+        "Domain 01",
+        "Domain 02",
+        "Domain 02",
+    ]
+    assert aggregated["is_compliant"].tolist() == [0, 0, 1, 1]
+
+
+def test_aggregate_reports_logs_each_discovered_file(report_workspace, capsys):
+    reports_dir = report_workspace / "reports"
+    reports_dir.mkdir()
+    write_report(
+        reports_dir / "security_compliance_report.csv",
+        [{"domain_name": "example.test", "zone_id": "zone-id"}],
+    )
+
+    aggregate_to_sheets.aggregate_reports(reports_dir)
+
+    output = capsys.readouterr().out
+    assert "Discovered report:" in output
+    assert "security_compliance_report.csv (1 rows)" in output
+
+
+def test_aggregate_reports_drops_duplicate_latest_snapshot_in_same_hour(report_workspace):
+    reports_dir = report_workspace / "reports"
+    history_dir = reports_dir / "audit_history"
+    history_dir.mkdir(parents=True)
+    rows = [
+        {
+            "domain_name": "example.test",
+            "zone_id": "zone-id",
+            "ssl_mode": "full",
+            "is_compliant": True,
+        }
+    ]
+    write_report(history_dir / "20260430T020000Z_security_compliance_report.csv", rows)
+    latest_report = reports_dir / "security_compliance_report.csv"
+    write_report(latest_report, rows)
+    set_mtime(latest_report, "20260430T020500Z")
+
+    aggregated = aggregate_to_sheets.aggregate_reports(reports_dir)
+
+    assert aggregated["audit_date"].tolist() == ["20260430T020000Z"]
+    assert aggregated["is_compliant"].tolist() == [1]
+
+
+def test_aggregate_reports_fails_when_no_matching_csvs(report_workspace):
+    reports_dir = report_workspace / "reports"
+    reports_dir.mkdir()
+    write_report(reports_dir / "other_report.csv", [{"domain_name": "ignored.example"}])
+
+    with pytest.raises(RuntimeError, match="No compliance CSV reports found"):
+        aggregate_to_sheets.aggregate_reports(reports_dir)
+
+
+def test_aggregate_reports_fails_when_matching_csvs_are_empty(report_workspace):
+    reports_dir = report_workspace / "reports"
+    reports_dir.mkdir()
+    (reports_dir / "security_compliance_report.csv").write_text(
+        "domain_name,zone_id,is_compliant\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="did not contain any rows"):
+        aggregate_to_sheets.aggregate_reports(reports_dir)
+
+
+def test_sync_to_google_sheets_overwrites_latest_and_appends_history(mocker):
+    latest_worksheet = mocker.Mock(name="latest_worksheet")
+    history_worksheet = mocker.Mock(name="history_worksheet")
+    history_worksheet.col_values.return_value = ["audit_date", "20260430T010000Z"]
+    spreadsheet = mocker.Mock(name="spreadsheet")
+    spreadsheet.worksheet.side_effect = lambda title: {
+        "latest": latest_worksheet,
+        "history": history_worksheet,
+    }[title]
+    client = mocker.Mock(name="client")
+    client.open_by_key.return_value = spreadsheet
+    service_account = mocker.patch(
+        "scripts.aggregate_to_sheets.gspread.service_account",
+        return_value=client,
+    )
+    dataframe = pd.DataFrame(
+        [
+            {
+                "audit_date": "20260430T010000Z",
+                "domain_name": "Domain 01",
+                "is_compliant": False,
+            },
+            {
+                "audit_date": "20260430T020000Z",
+                "domain_name": "Domain 01",
+                "is_compliant": True,
+            },
+            {
+                "audit_date": "20260430T020000Z",
+                "domain_name": "Domain 02",
+                "is_compliant": False,
+            },
+        ]
+    )
+
+    aggregate_to_sheets.sync_to_google_sheets(
+        dataframe,
+        Path("service_account.json"),
+        spreadsheet_id="sheet-id-123",
+    )
+
+    service_account.assert_called_once_with(filename="service_account.json")
+    client.open_by_key.assert_called_once_with("sheet-id-123")
+    spreadsheet.worksheet.assert_any_call("latest")
+    spreadsheet.worksheet.assert_any_call("history")
+    latest_worksheet.clear.assert_called_once_with()
+    latest_worksheet.update.assert_called_once_with(
+        [
+            ["audit_date", "domain_name", "is_compliant"],
+            ["20260430T020000Z", "Domain 01", 1],
+            ["20260430T020000Z", "Domain 02", 0],
+        ]
+    )
+    history_worksheet.update.assert_not_called()
+    history_worksheet.append_rows.assert_called_once_with(
+        [["20260430T020000Z", "Domain 01", 1], ["20260430T020000Z", "Domain 02", 0]]
+    )
+
+
+def test_sync_to_google_sheets_creates_missing_worksheets_and_headers_history(mocker):
+    latest_worksheet = mocker.Mock(name="latest_worksheet")
+    history_worksheet = mocker.Mock(name="history_worksheet")
+    history_worksheet.col_values.return_value = []
+    spreadsheet = mocker.Mock(name="spreadsheet")
+    spreadsheet.worksheet.side_effect = aggregate_to_sheets.gspread.exceptions.WorksheetNotFound
+    spreadsheet.add_worksheet.side_effect = [latest_worksheet, history_worksheet]
+    client = mocker.Mock(name="client")
+    client.open_by_key.return_value = spreadsheet
+    mocker.patch("scripts.aggregate_to_sheets.gspread.service_account", return_value=client)
+    dataframe = pd.DataFrame(
+        [
+            {
+                "audit_date": "20260430T010000Z",
+                "domain_name": "Domain 01",
+                "is_compliant": True,
+            }
+        ]
+    )
+
+    aggregate_to_sheets.sync_to_google_sheets(
+        dataframe,
+        Path("service_account.json"),
+        spreadsheet_id="sheet-id-123",
+    )
+
+    spreadsheet.add_worksheet.assert_any_call(title="latest", rows=1000, cols=20)
+    spreadsheet.add_worksheet.assert_any_call(title="history", rows=1000, cols=20)
+    history_worksheet.update.assert_called_once_with(
+        [["audit_date", "domain_name", "is_compliant"]]
+    )
+    history_worksheet.append_rows.assert_called_once_with([["20260430T010000Z", "Domain 01", 1]])
+
+
+def test_sync_to_google_sheets_requires_sheet_id(monkeypatch):
+    monkeypatch.delenv("GOOGLE_SHEET_ID", raising=False)
+
+    with pytest.raises(RuntimeError, match="GOOGLE_SHEET_ID"):
+        aggregate_to_sheets.sync_to_google_sheets(pd.DataFrame())

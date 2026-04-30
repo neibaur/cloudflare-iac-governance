@@ -2,3 +2,6 @@
 **/.tfstate
 **/.env
 **/.terraform/
+
+# Google Cloud Service Account Key
+**/service_account.json
