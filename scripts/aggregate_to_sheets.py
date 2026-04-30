@@ -54,7 +54,7 @@ def compliance_bit(value: object) -> int:
     if isinstance(value, bool):
         return int(value)
 
-    return int(str(value).strip().lower() == "true")
+    return int(str(value).strip().lower() in {"1", "true"})
 
 
 def normalize_compliance_bits(dataframe: pd.DataFrame) -> pd.DataFrame:

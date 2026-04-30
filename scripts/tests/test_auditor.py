@@ -372,7 +372,7 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
                 "always_use_https": "on",
                 "security_level": "medium",
                 "bot_fight_mode": "on",
-                "is_compliant": True,
+                "is_compliant": 1,
             },
             {
                 "domain_name": "weak.example",
@@ -381,7 +381,7 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
                 "always_use_https": "off",
                 "security_level": "low",
                 "bot_fight_mode": "off",
-                "is_compliant": False,
+                "is_compliant": 0,
             },
         ],
         ANY,

@@ -48,6 +48,27 @@ jobs:
       - name: Run compliance audit
         run: python run_tools.py --audit
 
+      - name: Check first audit for compliance gaps
+        id: first_audit
+        run: |
+          if python scripts/check_compliance_gaps.py; then
+            echo "gaps_detected=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "gaps_detected=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply Terraform remediation
+        if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
+        run: terraform -chdir=terraform apply -auto-approve -input=false -var-file=ci.auto.tfvars
+
+      - name: Run post-remediation compliance audit
+        if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
+        run: python run_tools.py --audit
+
+      - name: Verify post-remediation compliance
+        if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
+        run: python scripts/check_compliance_gaps.py
+
       - name: Install BI sync dependencies
         run: python -m pip install -r requirements.txt
 

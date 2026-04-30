@@ -9,7 +9,7 @@ DEFAULT_REPORT_DIR = Path("reports")
 
 
 def is_compliant_value(value: str) -> bool:
-    return value.strip().lower() == "true"
+    return value.strip().lower() in {"1", "true"}
 
 
 def compliance_percentage(report_path: Path) -> float:
