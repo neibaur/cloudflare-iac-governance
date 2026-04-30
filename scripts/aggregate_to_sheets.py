@@ -13,6 +13,8 @@ REPORTS_DIR = Path(os.path.abspath(os.path.join("reports")))
 SERVICE_ACCOUNT_FILE = Path("service_account.json")
 MAIN_SHEET_NAME = "Cloudflare_Compliance_Main"
 GOOGLE_SHEET_ID_ENV = "GOOGLE_SHEET_ID"
+LATEST_WORKSHEET_TITLE = "latest"
+HISTORY_WORKSHEET_TITLE = "history"
 REPORT_PATTERN = re.compile(r"^(?P<audit_date>\d{8}T\d{6}Z)_security_compliance_report\.csv$")
 LATEST_REPORT_NAME = "security_compliance_report.csv"
 SENSITIVE_COLUMNS = ("zone_id",)
@@ -136,6 +138,50 @@ def sheet_rows(dataframe: pd.DataFrame) -> list[list[Any]]:
     ]
 
 
+def sheet_data_rows(dataframe: pd.DataFrame) -> list[list[Any]]:
+    if dataframe.empty:
+        return []
+
+    sanitized = dataframe.fillna("")
+    return cast(list[list[Any]], sanitized.values.tolist())
+
+
+def get_or_create_worksheet(spreadsheet: Any, title: str) -> Any:
+    try:
+        return spreadsheet.worksheet(title)
+    except gspread.exceptions.WorksheetNotFound:
+        return spreadsheet.add_worksheet(title=title, rows=1000, cols=20)
+
+
+def latest_snapshot(dataframe: pd.DataFrame) -> pd.DataFrame:
+    newest_audit_date = str(dataframe["audit_date"].max())
+    return dataframe[dataframe["audit_date"] == newest_audit_date]
+
+
+def latest_history_audit_date(worksheet: Any) -> str | None:
+    values = worksheet.col_values(1)
+    audit_dates = [str(value) for value in values if re.fullmatch(r"\d{8}T\d{6}Z", str(value))]
+    if not audit_dates:
+        return None
+
+    return max(audit_dates)
+
+
+def append_new_history_rows(worksheet: Any, dataframe: pd.DataFrame) -> int:
+    newest_sheet_audit_date = latest_history_audit_date(worksheet)
+    if newest_sheet_audit_date is None:
+        rows_to_append = dataframe
+        worksheet.update([list(dataframe.columns)])
+    else:
+        rows_to_append = dataframe[dataframe["audit_date"] > newest_sheet_audit_date]
+
+    rows = sheet_data_rows(rows_to_append)
+    if rows:
+        worksheet.append_rows(rows)
+
+    return len(rows)
+
+
 def sync_to_google_sheets(
     dataframe: pd.DataFrame,
     credentials_path: Path = SERVICE_ACCOUNT_FILE,
@@ -147,13 +193,19 @@ def sync_to_google_sheets(
 
     client = gspread.service_account(filename=str(credentials_path))
     spreadsheet = client.open_by_key(sheet_id)
-    worksheet = spreadsheet.sheet1
-    rows = sheet_rows(dataframe)
+    latest_worksheet = get_or_create_worksheet(spreadsheet, LATEST_WORKSHEET_TITLE)
+    history_worksheet = get_or_create_worksheet(spreadsheet, HISTORY_WORKSHEET_TITLE)
+    normalized = normalize_compliance_bits(dataframe)
+    latest_rows = sheet_rows(latest_snapshot(normalized))
 
-    worksheet.clear()
-    if rows:
-        worksheet.update(rows)
-    print(f"Success: wrote {len(dataframe)} compliance rows to Google Sheet ID {sheet_id}.")
+    latest_worksheet.clear()
+    latest_worksheet.update(latest_rows)
+    appended_rows = append_new_history_rows(history_worksheet, normalized)
+    print(
+        "Success: wrote "
+        f"{len(latest_rows) - 1} latest rows and appended {appended_rows} history rows "
+        f"to Google Sheet ID {sheet_id}."
+    )
 
 
 def main() -> int:

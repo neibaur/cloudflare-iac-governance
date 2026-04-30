@@ -159,15 +159,75 @@ def test_aggregate_reports_fails_when_matching_csvs_are_empty(report_workspace):
         aggregate_to_sheets.aggregate_reports(reports_dir)
 
 
-def test_sync_to_google_sheets_overwrites_main_sheet(mocker):
-    worksheet = mocker.Mock(name="worksheet")
-    spreadsheet = mocker.Mock(name="spreadsheet", sheet1=worksheet)
+def test_sync_to_google_sheets_overwrites_latest_and_appends_history(mocker):
+    latest_worksheet = mocker.Mock(name="latest_worksheet")
+    history_worksheet = mocker.Mock(name="history_worksheet")
+    history_worksheet.col_values.return_value = ["audit_date", "20260430T010000Z"]
+    spreadsheet = mocker.Mock(name="spreadsheet")
+    spreadsheet.worksheet.side_effect = lambda title: {
+        "latest": latest_worksheet,
+        "history": history_worksheet,
+    }[title]
     client = mocker.Mock(name="client")
     client.open_by_key.return_value = spreadsheet
     service_account = mocker.patch(
         "scripts.aggregate_to_sheets.gspread.service_account",
         return_value=client,
     )
+    dataframe = pd.DataFrame(
+        [
+            {
+                "audit_date": "20260430T010000Z",
+                "domain_name": "Domain 01",
+                "is_compliant": False,
+            },
+            {
+                "audit_date": "20260430T020000Z",
+                "domain_name": "Domain 01",
+                "is_compliant": True,
+            },
+            {
+                "audit_date": "20260430T020000Z",
+                "domain_name": "Domain 02",
+                "is_compliant": False,
+            },
+        ]
+    )
+
+    aggregate_to_sheets.sync_to_google_sheets(
+        dataframe,
+        Path("service_account.json"),
+        spreadsheet_id="sheet-id-123",
+    )
+
+    service_account.assert_called_once_with(filename="service_account.json")
+    client.open_by_key.assert_called_once_with("sheet-id-123")
+    spreadsheet.worksheet.assert_any_call("latest")
+    spreadsheet.worksheet.assert_any_call("history")
+    latest_worksheet.clear.assert_called_once_with()
+    latest_worksheet.update.assert_called_once_with(
+        [
+            ["audit_date", "domain_name", "is_compliant"],
+            ["20260430T020000Z", "Domain 01", 1],
+            ["20260430T020000Z", "Domain 02", 0],
+        ]
+    )
+    history_worksheet.update.assert_not_called()
+    history_worksheet.append_rows.assert_called_once_with(
+        [["20260430T020000Z", "Domain 01", 1], ["20260430T020000Z", "Domain 02", 0]]
+    )
+
+
+def test_sync_to_google_sheets_creates_missing_worksheets_and_headers_history(mocker):
+    latest_worksheet = mocker.Mock(name="latest_worksheet")
+    history_worksheet = mocker.Mock(name="history_worksheet")
+    history_worksheet.col_values.return_value = []
+    spreadsheet = mocker.Mock(name="spreadsheet")
+    spreadsheet.worksheet.side_effect = aggregate_to_sheets.gspread.exceptions.WorksheetNotFound
+    spreadsheet.add_worksheet.side_effect = [latest_worksheet, history_worksheet]
+    client = mocker.Mock(name="client")
+    client.open_by_key.return_value = spreadsheet
+    mocker.patch("scripts.aggregate_to_sheets.gspread.service_account", return_value=client)
     dataframe = pd.DataFrame(
         [
             {
@@ -184,12 +244,12 @@ def test_sync_to_google_sheets_overwrites_main_sheet(mocker):
         spreadsheet_id="sheet-id-123",
     )
 
-    service_account.assert_called_once_with(filename="service_account.json")
-    client.open_by_key.assert_called_once_with("sheet-id-123")
-    worksheet.clear.assert_called_once_with()
-    worksheet.update.assert_called_once_with(
-        [["audit_date", "domain_name", "is_compliant"], ["20260430T010000Z", "Domain 01", True]]
+    spreadsheet.add_worksheet.assert_any_call(title="latest", rows=1000, cols=20)
+    spreadsheet.add_worksheet.assert_any_call(title="history", rows=1000, cols=20)
+    history_worksheet.update.assert_called_once_with(
+        [["audit_date", "domain_name", "is_compliant"]]
     )
+    history_worksheet.append_rows.assert_called_once_with([["20260430T010000Z", "Domain 01", 1]])
 
 
 def test_sync_to_google_sheets_requires_sheet_id(monkeypatch):
