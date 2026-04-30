@@ -59,7 +59,12 @@ jobs:
 
       - name: Apply Terraform remediation
         if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
-        run: terraform -chdir=terraform apply -auto-approve -input=false -var-file=ci.auto.tfvars
+        env:
+          REAL_TFVARS: ${{ secrets.REAL_TFVARS }}
+        run: |
+          trap 'rm -f terraform/remediation.tfvars' EXIT
+          echo "$REAL_TFVARS" > terraform/remediation.tfvars
+          terraform -chdir=terraform apply -auto-approve -input=false -var-file=remediation.tfvars
 
       - name: Run post-remediation compliance audit
         if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
