@@ -1,10 +1,14 @@
+import os
 import shutil
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
 from scripts import aggregate_to_sheets
+
+UTC_PATTERN = r"^\d{8}T\d{6}Z$"
 
 
 @pytest.fixture
@@ -22,6 +26,12 @@ def report_workspace():
 def write_report(path: Path, rows: list[dict[str, object]]) -> None:
     dataframe = pd.DataFrame(rows)
     dataframe.to_csv(path, index=False)
+
+
+def set_mtime(path: Path, value: str) -> None:
+    timestamp = datetime.strptime(value, "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC).timestamp()
+    path.touch()
+    os.utime(path, (timestamp, timestamp))
 
 
 def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
@@ -57,8 +67,9 @@ def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
         ],
     )
 
+    latest_report = reports_dir / "security_compliance_report.csv"
     write_report(
-        reports_dir / "security_compliance_report.csv",
+        latest_report,
         [
             {
                 "domain_name": "zeta.example",
@@ -68,6 +79,7 @@ def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
             }
         ],
     )
+    set_mtime(latest_report, "20260430T030000Z")
 
     aggregated = aggregate_to_sheets.aggregate_reports(reports_dir)
 
@@ -76,14 +88,16 @@ def test_aggregate_reports_masks_zone_ids_and_aliases_domains(report_workspace):
         "20260430T010000Z",
         "20260430T020000Z",
         "20260430T020000Z",
-        "latest",
+        "20260430T030000Z",
     ]
+    assert aggregated["audit_date"].str.match(UTC_PATTERN).all()
     assert aggregated["domain_name"].tolist() == [
         "Domain 01",
-        "Domain 02",
         "Domain 01",
         "Domain 02",
+        "Domain 02",
     ]
+    assert aggregated["is_compliant"].tolist() == [0, 0, 1, 1]
 
 
 def test_aggregate_reports_logs_each_discovered_file(report_workspace, capsys):
@@ -99,6 +113,29 @@ def test_aggregate_reports_logs_each_discovered_file(report_workspace, capsys):
     output = capsys.readouterr().out
     assert "Discovered report:" in output
     assert "security_compliance_report.csv (1 rows)" in output
+
+
+def test_aggregate_reports_drops_duplicate_latest_snapshot_in_same_hour(report_workspace):
+    reports_dir = report_workspace / "reports"
+    history_dir = reports_dir / "audit_history"
+    history_dir.mkdir(parents=True)
+    rows = [
+        {
+            "domain_name": "example.test",
+            "zone_id": "zone-id",
+            "ssl_mode": "full",
+            "is_compliant": True,
+        }
+    ]
+    write_report(history_dir / "20260430T020000Z_security_compliance_report.csv", rows)
+    latest_report = reports_dir / "security_compliance_report.csv"
+    write_report(latest_report, rows)
+    set_mtime(latest_report, "20260430T020500Z")
+
+    aggregated = aggregate_to_sheets.aggregate_reports(reports_dir)
+
+    assert aggregated["audit_date"].tolist() == ["20260430T020000Z"]
+    assert aggregated["is_compliant"].tolist() == [1]
 
 
 def test_aggregate_reports_fails_when_no_matching_csvs(report_workspace):
