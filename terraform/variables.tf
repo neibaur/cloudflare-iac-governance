@@ -1,23 +1,8 @@
-variable "cloudflare_api_token" {
-  description = "Cloudflare API token used by the Terraform provider."
-  type        = string
-  sensitive   = true
-
-  validation {
-    condition     = var.cloudflare_api_token != ""
-    error_message = "cloudflare_api_token must not be empty."
-  }
-}
-
 variable "cloudflare_account_id" {
-  description = "Cloudflare account ID used for account-scoped API operations."
+  description = "Optional Cloudflare account ID, supplied through TF_VAR_cloudflare_account_id when needed."
   type        = string
   sensitive   = true
-
-  validation {
-    condition     = var.cloudflare_account_id != ""
-    error_message = "cloudflare_account_id must not be empty."
-  }
+  default     = ""
 }
 
 variable "domains" {
