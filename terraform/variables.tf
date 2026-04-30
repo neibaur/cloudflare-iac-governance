@@ -9,6 +9,17 @@ variable "cloudflare_api_token" {
   }
 }
 
+variable "cloudflare_account_id" {
+  description = "Cloudflare account ID used for account-scoped API operations."
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = var.cloudflare_account_id != ""
+    error_message = "cloudflare_account_id must not be empty."
+  }
+}
+
 variable "domains" {
   description = "Map of domain names to Cloudflare zone IDs and optional security posture overrides."
   type = map(object({

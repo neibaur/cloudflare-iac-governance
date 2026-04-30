@@ -1,11 +1,18 @@
+from unittest.mock import call
+
 import httpx
 import pytest
 
 from scripts.cloudflare_client import CloudflareAPIError, CloudflareAuditor
 
 
+def test_auditor_requires_account_id():
+    with pytest.raises(ValueError, match="account ID"):
+        CloudflareAuditor(api_token="scoped-test-token", account_id="")
+
+
 def test_verify_connection_returns_token_status(mock_cloudflare_token_verify):
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
 
     verification = auditor.verify_connection()
 
@@ -13,7 +20,9 @@ def test_verify_connection_returns_token_status(mock_cloudflare_token_verify):
         "id": "token-id",
         "status": "active",
     }
-    mock_cloudflare_token_verify.assert_called_once_with("/user/tokens/verify")
+    mock_cloudflare_token_verify.assert_called_once_with(
+        "/accounts/test-account-id/tokens/verify"
+    )
 
 
 def test_verify_connection_reports_invalid_token_helpfully(mocker):
@@ -26,9 +35,9 @@ def test_verify_connection_reports_invalid_token_helpfully(mocker):
             "result": None,
         },
     )
-    auditor = CloudflareAuditor(api_token="bad-token")
+    auditor = CloudflareAuditor(api_token="bad-token", account_id="test-account-id")
 
-    with pytest.raises(CloudflareAPIError, match="CLOUDFLARE_API_TOKEN"):
+    with pytest.raises(CloudflareAPIError, match="CLOUDFLARE_ACCOUNT_ID"):
         auditor.verify_connection()
 
 
@@ -36,7 +45,7 @@ def test_get_zone_security_settings_parses_successful_response(
     mock_cloudflare,
     cloudflare_fixture_data,
 ):
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
 
     settings = auditor.get_zone_security_settings(cloudflare_fixture_data.zone_id)
 
@@ -52,7 +61,7 @@ def test_get_zone_security_settings_parses_successful_response(
 
 
 def test_get_zone_security_settings_requires_zone_id():
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
 
     with pytest.raises(ValueError, match="zone_id is required"):
         auditor.get_zone_security_settings("")
@@ -66,7 +75,7 @@ def test_get_zone_setting_reports_cloudflare_error(mocker, cloudflare_fixture_da
             "errors": [{"code": 1001, "message": "Zone not found"}],
         },
     )
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
 
     with pytest.raises(CloudflareAPIError, match="Zone not found"):
         auditor._get_zone_setting(cloudflare_fixture_data.zone_id, "ssl")
@@ -77,7 +86,7 @@ def test_get_zone_setting_rejects_missing_result(mocker, cloudflare_fixture_data
         "scripts.cloudflare_client.CloudflareAuditor._request",
         return_value={"success": True, "result": None},
     )
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
 
     with pytest.raises(CloudflareAPIError, match="result object"):
         auditor._get_zone_setting(cloudflare_fixture_data.zone_id, "ssl")
@@ -100,13 +109,17 @@ def test_request_returns_json_object(mocker):
         request=httpx.Request("GET", "https://api.example.test/user/tokens/verify"),
     )
     http_get = mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
-    auditor = CloudflareAuditor(api_token="scoped-test-token", base_url="https://api.example.test")
+    auditor = CloudflareAuditor(
+        api_token="scoped-test-token",
+        account_id="test-account-id",
+        base_url="https://api.example.test",
+    )
 
-    payload = auditor._request("/user/tokens/verify")
+    payload = auditor._request("/accounts/test-account-id/tokens/verify")
 
     assert payload == {"success": True, "result": {"status": "active"}}
     http_get.assert_called_once_with(
-        "https://api.example.test/user/tokens/verify",
+        "https://api.example.test/accounts/test-account-id/tokens/verify",
         headers={
             "Authorization": "Bearer scoped-test-token",
             "Content-Type": "application/json",
@@ -123,7 +136,11 @@ def test_request_reports_http_error(mocker, status_code):
         request=httpx.Request("GET", "https://api.example.test/failure"),
     )
     mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
-    auditor = CloudflareAuditor(api_token="scoped-test-token", base_url="https://api.example.test")
+    auditor = CloudflareAuditor(
+        api_token="scoped-test-token",
+        account_id="test-account-id",
+        base_url="https://api.example.test",
+    )
 
     with pytest.raises(CloudflareAPIError, match=f"HTTP {status_code}"):
         auditor._request("/failure")
@@ -134,7 +151,11 @@ def test_request_reports_network_error(mocker):
         "scripts.cloudflare_client.httpx.get",
         side_effect=httpx.RequestError("connection failed"),
     )
-    auditor = CloudflareAuditor(api_token="scoped-test-token", base_url="https://api.example.test")
+    auditor = CloudflareAuditor(
+        api_token="scoped-test-token",
+        account_id="test-account-id",
+        base_url="https://api.example.test",
+    )
 
     with pytest.raises(CloudflareAPIError, match="connection failed"):
         auditor._request("/failure")
@@ -147,7 +168,11 @@ def test_request_reports_malformed_json(mocker):
         request=httpx.Request("GET", "https://api.example.test/bad-json"),
     )
     mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
-    auditor = CloudflareAuditor(api_token="scoped-test-token", base_url="https://api.example.test")
+    auditor = CloudflareAuditor(
+        api_token="scoped-test-token",
+        account_id="test-account-id",
+        base_url="https://api.example.test",
+    )
 
     with pytest.raises(CloudflareAPIError, match="not valid JSON"):
         auditor._request("/bad-json")
@@ -160,14 +185,18 @@ def test_request_rejects_non_object_json(mocker):
         request=httpx.Request("GET", "https://api.example.test/list-json"),
     )
     mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
-    auditor = CloudflareAuditor(api_token="scoped-test-token", base_url="https://api.example.test")
+    auditor = CloudflareAuditor(
+        api_token="scoped-test-token",
+        account_id="test-account-id",
+        base_url="https://api.example.test",
+    )
 
     with pytest.raises(CloudflareAPIError, match="not a JSON object"):
         auditor._request("/list-json")
 
 
 def test_list_all_zones_prints_terraform_hcl(mocker, capsys):
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
     mocker.patch.object(
         auditor,
         "verify_connection",
@@ -176,7 +205,7 @@ def test_list_all_zones_prints_terraform_hcl(mocker, capsys):
             "policies": [{"permission_groups": [{"name": "Zone Read"}]}],
         },
     )
-    mocker.patch.object(
+    request = mocker.patch.object(
         auditor,
         "_request",
         side_effect=[
@@ -208,11 +237,15 @@ def test_list_all_zones_prints_terraform_hcl(mocker, capsys):
             "}",
         ]
     )
+    assert request.call_args_list == [
+        call("/zones?account.id=test-account-id&page=1&per_page=50"),
+        call("/zones?account.id=test-account-id&page=2&per_page=50"),
+    ]
     assert capsys.readouterr().out == f"{hcl}\n"
 
 
 def test_list_all_zones_reports_missing_zone_read(mocker):
-    auditor = CloudflareAuditor(api_token="scoped-test-token")
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
     mocker.patch.object(auditor, "verify_connection", return_value={"status": "active"})
     mocker.patch.object(
         auditor,

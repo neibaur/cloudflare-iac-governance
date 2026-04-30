@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 
@@ -8,27 +9,37 @@ import httpx
 class CloudflareAuditor:
     """Read-only Cloudflare audit client using a scoped API token."""
 
-    def __init__(self, api_token: str, base_url: str = "https://api.cloudflare.com/client/v4"):
+    def __init__(
+        self,
+        api_token: str,
+        account_id: str,
+        base_url: str = "https://api.cloudflare.com/client/v4",
+    ):
         if not api_token:
             raise ValueError("A scoped Cloudflare API token is required.")
+        if not account_id:
+            raise ValueError("A Cloudflare account ID is required.")
 
         self.api_token = api_token
+        self.account_id = account_id
         self.base_url = base_url.rstrip("/")
 
     def verify_connection(self) -> dict[str, Any]:
         try:
-            payload = self._request("/user/tokens/verify")
+            payload = self._request(f"{self._account_path}/tokens/verify")
         except CloudflareAPIError as exc:
             raise CloudflareAPIError(
                 "Unable to verify the Cloudflare API token. Confirm "
-                "CLOUDFLARE_API_TOKEN is set locally and contains a valid scoped token."
+                "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are set locally and "
+                "the token is valid for the account."
             ) from exc
 
         if not payload.get("success", False):
             errors = payload.get("errors") or []
             raise CloudflareAPIError(
                 "Unable to verify the Cloudflare API token. Confirm "
-                "CLOUDFLARE_API_TOKEN is set locally and contains a valid scoped token. "
+                "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are set locally and "
+                "the token is valid for the account. "
                 f"Cloudflare returned: {errors}"
             )
 
@@ -47,7 +58,7 @@ class CloudflareAuditor:
         total_pages = self._total_pages(result_info)
 
         for page in range(2, total_pages + 1):
-            payload = self._request(f"/zones?page={page}&per_page=50")
+            payload = self._request(self._zones_path(page))
             zones.extend(self._zones_from_payload(payload))
 
         hcl = self._zones_to_hcl(zones)
@@ -123,14 +134,22 @@ class CloudflareAuditor:
     def _assert_zone_read_permission(self) -> dict[str, Any]:
         verification = self.verify_connection()
         if self._verification_includes_zone_read(verification):
-            return self._request("/zones?page=1&per_page=50")
+            return self._request(self._zones_path(1))
 
         try:
-            return self._request("/zones?page=1&per_page=50")
+            return self._request(self._zones_path(1))
         except CloudflareAPIError as exc:
             raise CloudflareAPIError(
                 "Unable to list zones. Confirm the token includes Zone:Read permissions."
             ) from exc
+
+    @property
+    def _account_path(self) -> str:
+        return f"/accounts/{quote(self.account_id, safe='')}"
+
+    def _zones_path(self, page: int) -> str:
+        account_id = quote(self.account_id, safe="")
+        return f"/zones?account.id={account_id}&page={page}&per_page=50"
 
     @classmethod
     def _verification_includes_zone_read(cls, value: Any) -> bool:
