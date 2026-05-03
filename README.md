@@ -119,6 +119,11 @@ manual workflow dispatch with `run_remediation=Y` and the GitHub Variable
 Never edit Terraform state files manually. Real `.tfvars` content must stay in
 local ignored files or GitHub Secrets.
 
+Cloudflare provider v5 migration is intentionally out of scope for the hygiene
+baseline. It will require replacing `cloudflare_zone_settings_override` with
+per-setting `cloudflare_zone_setting` resources and handling Terraform state
+migration separately.
+
 ## GitHub Actions Secrets
 
 The state-aware workflow expects these secrets only when the relevant operation
