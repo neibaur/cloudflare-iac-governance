@@ -45,7 +45,7 @@ jobs:
         run: python scripts/run_all_checks.py
 
       - name: Check Terraform formatting
-        run: terraform -chdir=terraform fmt -check
+        run: terraform -chdir=terraform fmt -check -recursive
 
       - name: Initialize Terraform without backend
         run: terraform -chdir=terraform init -backend=false

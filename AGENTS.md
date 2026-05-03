@@ -66,8 +66,10 @@ If a protected local file exists, leave it alone unless the user explicitly asks
 Run the lightweight local quality gate before proposing a change is complete:
 
 ```powershell
-python scripts/run_all_checks.py
-terraform -chdir=terraform fmt -check
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
+.venv\Scripts\python scripts/run_all_checks.py
+terraform -chdir=terraform fmt -check -recursive
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
@@ -83,7 +85,7 @@ detect-secrets audit .secrets.baseline
 ## Terraform Safety Rules
 
 - Never run `terraform apply` in pull request workflows.
-- Default validation is `terraform fmt -check`, `terraform init -backend=false`, `terraform validate`, and a safe-input `terraform plan`.
+- Default validation is `terraform fmt -check -recursive`, `terraform init -backend=false`, `terraform validate`, and a safe-input `terraform plan`.
 - Use `-refresh=false` for PR/local mock-value plans when local state or credentials may exist.
 - Use only mock CI values from `terraform/ci.auto.tfvars` for PR validation.
 - Use real values only through GitHub Secrets or a local ignored `terraform/terraform.tfvars`.

@@ -61,13 +61,13 @@ jobs:
         run: terraform -chdir=terraform init -backend=false
 
       - name: Terraform fmt check
-        run: terraform -chdir=terraform fmt -check
+        run: terraform -chdir=terraform fmt -check -recursive
 
       - name: Terraform validate
         run: terraform -chdir=terraform validate
 
       - name: Terraform plan
-        run: terraform -chdir=terraform plan -input=false -var-file=ci.auto.tfvars
+        run: terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
       - name: Run compliance audit
         run: python run_tools.py --audit

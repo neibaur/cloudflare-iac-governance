@@ -57,7 +57,8 @@ CLOUDFLARE_ACCOUNT_ID=your-account-id
 Install dependencies:
 
 ```powershell
-python -m pip install -r requirements-dev.txt
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 ```
 
 Real Terraform values belong in an ignored local file such as
@@ -69,8 +70,8 @@ Real Terraform values belong in an ignored local file such as
 Run the local quality gate and Terraform safety checks:
 
 ```powershell
-python scripts/run_all_checks.py
-terraform -chdir=terraform fmt -check
+.venv\Scripts\python scripts/run_all_checks.py
+terraform -chdir=terraform fmt -check -recursive
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
