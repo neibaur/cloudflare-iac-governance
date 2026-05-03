@@ -22,6 +22,15 @@ ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
 Cloudflare provider v5 migration guidance is tracked separately in
 [docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
 
+## Governance
+
+Project operating rules live in [AGENTS.md](AGENTS.md). Pull requests should use
+the [.github/pull_request_template.md](.github/pull_request_template.md), and
+ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
+
+Cloudflare provider v5 migration guidance is tracked separately in
+[docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
+
 ## Architecture
 
 ```mermaid
