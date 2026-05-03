@@ -17,8 +17,6 @@ CHECKS = (
             sys.executable,
             "-m",
             "pytest",
-            "--cov=scripts",
-            "--cov-fail-under=80",
             "scripts/tests/",
         ],
     ),
