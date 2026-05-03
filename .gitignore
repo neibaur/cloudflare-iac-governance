@@ -60,8 +60,11 @@ cython_debug/
 .ruff_cache/
 
 # Reports
+reports/
 *_security_compliance_report.csv
 security_compliance_report.csv
+compliance_summary.csv
+generated_sync_outputs/
 
 # Terraform
 **/*.tfstate*
@@ -71,11 +74,24 @@ security_compliance_report.csv
 terraform/terraform.tfvars
 terraform/secrets.auto.tfvars
 .terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
 
 # Secrets
 .env
+.env.*
+!.env.example
 .envrc
 service_account.json
+*.service-account.json
+*.pem
+*.key
+*.p12
+*.pfx
 .streamlit/secrets.toml
 .pypirc
 
@@ -84,8 +100,8 @@ service_account.json
 .spyproject
 .ropeproject
 .abstra/
-# .idea/
-# .vscode/
+.idea/
+.vscode/
 tempCodeRunnerFile.py
 
 # Local App / Tool State

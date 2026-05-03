@@ -1,6 +1,17 @@
 # cloudflare_IaC
 Cloudflare Infrastructure Management (IaC) for API and Terraform bulk retrieval and update of multiple domain security settings
 
+## Branch And PR Expectations
+
+`main` is the production trunk. `dev` is the staging and experiment branch.
+Pull requests should target `dev` or `main`, pass the lightweight quality
+workflow, and avoid generated reports, local secrets, Terraform state, or real
+infrastructure values.
+
+PR validation is intentionally non-destructive. It runs Python quality checks,
+Terraform formatting, Terraform validation, and a safe plan using mock values
+from `terraform/ci.auto.tfvars`.
+
 ## Architecture
 
 ```mermaid
@@ -34,7 +45,7 @@ After remediation, the workflow immediately runs a second audit. If gaps remain,
 the build fails instead of retrying indefinitely. This makes failed remediation
 visible to the administrator and prevents an unsafe apply loop.
 
-## How to Use
+## Local Setup
 
 Create a local `.env` file with your Cloudflare credentials:
 
@@ -43,12 +54,33 @@ CLOUDFLARE_API_TOKEN=your-scoped-token
 CLOUDFLARE_ACCOUNT_ID=your-account-id
 ```
 
-Install dependencies and run the local quality gate:
+Install dependencies:
 
 ```powershell
-python -m pip install -r requirements-dev.txt
-python scripts/run_all_checks.py
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements-dev.txt
 ```
+
+Real Terraform values belong in an ignored local file such as
+`terraform/terraform.tfvars`, or in GitHub Secrets for automation. Keep
+`terraform/ci.auto.tfvars` limited to mock CI values.
+
+## Validation
+
+Run the local quality gate and Terraform safety checks:
+
+```powershell
+.venv\Scripts\python scripts/run_all_checks.py
+terraform -chdir=terraform fmt -check -recursive
+terraform -chdir=terraform init -backend=false
+terraform -chdir=terraform validate
+terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+```
+
+`.secrets.baseline` is kept for local detect-secrets pre-flight checks.
+Gitleaks runs in GitHub Actions as the CI/CD history-scanning enforcement gate.
+
+## How to Use
 
 Run a read-only Cloudflare compliance audit:
 
@@ -76,9 +108,37 @@ Terraform CI uses `terraform/ci.auto.tfvars` with mock domains so GitHub
 Actions can validate `terraform plan` without private domain data. Keep real
 domain mappings in your local `terraform/terraform.tfvars` file.
 
+## Terraform Safety
+
+Pull request workflows never run `terraform apply`, remediation, Cloudflare
+audits, or Google Sheets sync. State-aware audit and report upload run from the
+Terraform CI workflow on `main` or by manual dispatch. Remediation requires a
+manual workflow dispatch with `run_remediation=Y` and the GitHub Variable
+`FIX_DETECTED_GAPS=Y`.
+
+Never edit Terraform state files manually. Real `.tfvars` content must stay in
+local ignored files or GitHub Secrets.
+
+## GitHub Actions Secrets
+
+The state-aware workflow expects these secrets only when the relevant operation
+runs:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
+- `REAL_TFVARS`
+- `GCP_SERVICE_ACCOUNT_KEY`
+- `GOOGLE_SHEET_ID`
+
+Do not commit `.env`, service account JSON files, raw Cloudflare exports, real
+`.tfvars`, Terraform state, or generated reports.
+
 After a GitHub Actions run, open the workflow run in the GitHub UI and download
 the `security-compliance-reports` artifact from the Artifacts section. It
 contains the generated `reports/` directory and compliance CSVs from that run.
+
+Generated reports are artifacts, not source files. Local copies under `reports/`
+are ignored by Git.
 
 ## Data Privacy
 

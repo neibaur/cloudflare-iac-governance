@@ -1,0 +1,27 @@
+title = "cloudflare_IaC Gitleaks config"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Local detect-secrets baseline metadata"
+paths = [
+  '''^\.secrets\.baseline$''',
+]
+
+[[allowlists]]
+description = "Documented placeholder values"
+condition = "AND"
+paths = [
+  '''^\.env\.example$''',
+  '''^README\.md$''',
+  '''^AGENTS\.md$''',
+  '''^\.github/workflows/quality\.yml$''',
+]
+regexes = [
+  '''your[_-]?[a-z0-9_-]+[_-]?here''',
+  '''your-scoped-token''',
+  '''your-account-id''',
+  '''ci-placeholder-token''',
+  '''0{16,}''',
+]

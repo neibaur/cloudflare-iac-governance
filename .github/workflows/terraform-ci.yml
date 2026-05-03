@@ -3,7 +3,28 @@ name: Terraform CI
 on:
   push:
     branches:
-      - "**"
+      - main
+  workflow_dispatch:
+    inputs:
+      run_remediation:
+        description: "Run guarded Terraform remediation when compliance gaps are detected"
+        required: true
+        default: "N"
+        type: choice
+        options:
+          - "N"
+          - "Y"
+      sync_to_sheets:
+        description: "Sync anonymized compliance reports to Google Sheets"
+        required: true
+        default: "N"
+        type: choice
+        options:
+          - "N"
+          - "Y"
+
+permissions:
+  contents: read
 
 jobs:
   quality-and-plan:
@@ -16,10 +37,10 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v5
         with:
           python-version: "3.14"
 
@@ -29,7 +50,7 @@ jobs:
           python -m pip install -r requirements-dev.txt
 
       - name: Set up Terraform
-        uses: hashicorp/setup-terraform@v4
+        uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.8"
 
@@ -39,11 +60,14 @@ jobs:
       - name: Terraform init
         run: terraform -chdir=terraform init -backend=false
 
+      - name: Terraform fmt check
+        run: terraform -chdir=terraform fmt -check -recursive
+
       - name: Terraform validate
         run: terraform -chdir=terraform validate
 
       - name: Terraform plan
-        run: terraform -chdir=terraform plan -input=false -var-file=ci.auto.tfvars
+        run: terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
       - name: Run compliance audit
         run: python run_tools.py --audit
@@ -58,7 +82,7 @@ jobs:
           fi
 
       - name: Apply Terraform remediation
-        if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
+        if: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
         env:
           REAL_TFVARS: ${{ secrets.REAL_TFVARS }}
         run: |
@@ -67,17 +91,19 @@ jobs:
           terraform -chdir=terraform apply -auto-approve -input=false -var-file=remediation.tfvars
 
       - name: Run post-remediation compliance audit
-        if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
+        if: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
         run: python run_tools.py --audit
 
       - name: Verify post-remediation compliance
-        if: steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y'
+        if: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
         run: python scripts/check_compliance_gaps.py
 
       - name: Install BI sync dependencies
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y' }}
         run: python -m pip install -r requirements.txt
 
       - name: Sync compliance reports to Google Sheets
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y' }}
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
@@ -87,7 +113,7 @@ jobs:
           python scripts/aggregate_to_sheets.py
 
       - name: Upload compliance reports
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: security-compliance-reports
