@@ -19,6 +19,8 @@ AI and automation agents must:
 - Never run destructive actions, remediation, or `terraform apply` without explicit user approval.
 - Keep generated reports and local tool outputs out of commits.
 - Treat `terraform/ci.auto.tfvars` as mock CI data only.
+- Never run Terraform plans using `ci.auto.tfvars` against a real local or remote state; this can produce destructive plans because mock CI inputs do not match real managed infrastructure.
+- For local testing with real state, use a local ignored `terraform/terraform.tfvars` instead of CI mock values.
 - Preserve `.secrets.baseline`; detect-secrets is used for local pre-flight checks, while Gitleaks is the CI/CD enforcement gate.
 
 ## Safe Files To Edit
