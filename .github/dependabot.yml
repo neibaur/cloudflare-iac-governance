@@ -17,3 +17,7 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "cloudflare/cloudflare"
+        versions:
+          - "5.x"
