@@ -9,8 +9,9 @@ workflow, and avoid generated reports, local secrets, Terraform state, or real
 infrastructure values.
 
 PR validation is intentionally non-destructive. It runs Python quality checks,
-Terraform formatting, Terraform validation, and a safe plan using mock values
-from `terraform/ci.auto.tfvars`.
+Terraform formatting, and Terraform validation. Terraform plans may use mock
+values from `terraform/ci.auto.tfvars` only in a safe mock-state/no-real-state
+context.
 
 ## Governance
 
