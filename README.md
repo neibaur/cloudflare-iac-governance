@@ -12,6 +12,15 @@ PR validation is intentionally non-destructive. It runs Python quality checks,
 Terraform formatting, Terraform validation, and a safe plan using mock values
 from `terraform/ci.auto.tfvars`.
 
+## Governance
+
+Project operating rules live in [AGENTS.md](AGENTS.md). Pull requests should use
+the [.github/pull_request_template.md](.github/pull_request_template.md), and
+ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
+
+Cloudflare provider v5 migration guidance is tracked separately in
+[docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
+
 ## Architecture
 
 ```mermaid
@@ -76,6 +85,8 @@ terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 ```
+
+Only run the `ci.auto.tfvars` plan in a safe mock-state/no-real-state context.
 
 `.secrets.baseline` is kept for local detect-secrets pre-flight checks.
 Gitleaks runs in GitHub Actions as the CI/CD history-scanning enforcement gate.
