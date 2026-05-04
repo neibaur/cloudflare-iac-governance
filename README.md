@@ -55,6 +55,9 @@ After remediation, the workflow immediately runs a second audit. If gaps remain,
 the build fails instead of retrying indefinitely. This makes failed remediation
 visible to the administrator and prevents an unsafe apply loop.
 
+`REAL_TFVARS` is only used during remediation workflows when
+`FIX_DETECTED_GAPS=Y`.
+
 ## Local Setup
 
 Create a local `.env` file with your Cloudflare credentials:
@@ -78,6 +81,7 @@ Real Terraform values belong in an ignored local file such as
 ## Validation
 
 Run the local quality gate and Terraform safety checks:
+Always run validation using the virtual environment to ensure dev dependencies (e.g., ruff) are available.
 
 ```powershell
 .venv\Scripts\python scripts/run_all_checks.py
@@ -174,7 +178,7 @@ Actions -> Secrets -> `REAL_TFVARS`. GitHub stores it as a single string, and
 the workflow materializes it into a `.tfvars` file at runtime; this is why the
 helper outputs HCL instead of JSON.
 
-Do not commit the generated output, paste real zone IDs into
+Do not commit the generated output or paste real zone IDs into
 `terraform/ci.auto.tfvars`, or use `ci.auto.tfvars` for anything except mock CI
 values. `REAL_TFVARS` is only materialized during guarded remediation workflows.
 
