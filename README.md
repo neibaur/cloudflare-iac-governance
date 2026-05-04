@@ -147,6 +147,37 @@ runs:
 - `GCP_SERVICE_ACCOUNT_KEY`
 - `GOOGLE_SHEET_ID`
 
+### Generating REAL_TFVARS from Cloudflare Zones
+
+Use the same local `.env` file for all Cloudflare operations, including
+`--audit` and `--list`. It must define `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`.
+
+Generate Terraform-compatible domain mappings from Cloudflare:
+
+```powershell
+python run_tools.py --list
+```
+
+The command prints HCL for the Terraform `domains` variable:
+
+```hcl
+domains = {
+  "example.com" = {
+    zone_id = "..."
+  }
+}
+```
+
+Paste the output into GitHub repo -> Settings -> Secrets and variables ->
+Actions -> Secrets -> `REAL_TFVARS`. GitHub stores it as a single string, and
+the workflow materializes it into a `.tfvars` file at runtime; this is why the
+helper outputs HCL instead of JSON.
+
+Do not commit the generated output, paste real zone IDs into
+`terraform/ci.auto.tfvars`, or use `ci.auto.tfvars` for anything except mock CI
+values. `REAL_TFVARS` is only materialized during guarded remediation workflows.
+
 Do not commit `.env`, service account JSON files, raw Cloudflare exports, real
 `.tfvars`, Terraform state, or generated reports.
 
