@@ -107,8 +107,9 @@ Real Terraform values belong in an ignored local file such as
 
 ## Validation
 
-Run the local quality gate and Terraform safety checks:
-Always run validation using the virtual environment to ensure dev dependencies (e.g., ruff) are available.
+Run the local quality gate and Terraform safety checks. Always run validation
+using the virtual environment to ensure dev dependencies, such as `ruff`, are
+available.
 
 ```powershell
 .venv\Scripts\python scripts/run_all_checks.py
