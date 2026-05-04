@@ -68,13 +68,8 @@ After remediation, the workflow immediately runs a second audit. If gaps remain,
 the build fails instead of retrying indefinitely. This makes failed remediation
 visible to the administrator and prevents an unsafe apply loop.
 
-`REAL_TFVARS` is only used during guarded remediation workflows. Keep
-`FIX_DETECTED_GAPS` as a repository-level GitHub Actions variable unless the job
-declares an environment. If `FIX_DETECTED_GAPS` is environment-scoped, the job
-must be associated with that environment before `vars.FIX_DETECTED_GAPS` is
-visible to the workflow. The workflow checks `vars.FIX_DETECTED_GAPS` directly;
-it does not need a job-level `FIX_DETECTED_GAPS` environment variable for
-remediation gating.
+`REAL_TFVARS` is only used during remediation workflows when
+`FIX_DETECTED_GAPS=Y`.
 
 ## Local Setup
 
