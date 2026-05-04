@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: '0 0 * * 0'
   workflow_dispatch:
     inputs:
       run_remediation:
@@ -81,6 +83,26 @@ jobs:
             echo "gaps_detected=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Log remediation gate state
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          GAPS_DETECTED: ${{ steps.first_audit.outputs.gaps_detected }}
+          FIX_DETECTED_GAPS_IS_Y: ${{ vars.FIX_DETECTED_GAPS == 'Y' }}
+          IS_WORKFLOW_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          RUN_REMEDIATION_IS_Y: ${{ inputs.run_remediation == 'Y' }}
+          SHEETS_SYNC_WILL_RUN: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y') }}
+          REMEDIATION_CONDITIONS_SATISFIED: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
+        run: |
+          echo "github.event_name=$EVENT_NAME"
+          echo "github.ref_name=$REF_NAME"
+          echo "steps.first_audit.outputs.gaps_detected=$GAPS_DETECTED"
+          echo "vars.FIX_DETECTED_GAPS == 'Y': $FIX_DETECTED_GAPS_IS_Y"
+          echo "github.event_name == 'workflow_dispatch': $IS_WORKFLOW_DISPATCH"
+          echo "inputs.run_remediation == 'Y': $RUN_REMEDIATION_IS_Y"
+          echo "Google Sheets sync will run: $SHEETS_SYNC_WILL_RUN"
+          echo "Remediation will run: $REMEDIATION_CONDITIONS_SATISFIED"
+
       - name: Apply Terraform remediation
         if: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
         env:
@@ -98,12 +120,34 @@ jobs:
         if: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
         run: python scripts/check_compliance_gaps.py
 
+      - name: Log Google Sheets sync gate state
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          GAPS_DETECTED: ${{ steps.first_audit.outputs.gaps_detected }}
+          FIX_DETECTED_GAPS_IS_Y: ${{ vars.FIX_DETECTED_GAPS == 'Y' }}
+          IS_SCHEDULE: ${{ github.event_name == 'schedule' }}
+          IS_WORKFLOW_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          SYNC_TO_SHEETS_IS_Y: ${{ inputs.sync_to_sheets == 'Y' }}
+          SHEETS_SYNC_CONDITIONS_SATISFIED: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y') }}
+          REMEDIATION_CONDITIONS_SATISFIED: ${{ steps.first_audit.outputs.gaps_detected == 'true' && vars.FIX_DETECTED_GAPS == 'Y' && github.event_name == 'workflow_dispatch' && inputs.run_remediation == 'Y' }}
+        run: |
+          echo "github.event_name=$EVENT_NAME"
+          echo "github.ref_name=$REF_NAME"
+          echo "steps.first_audit.outputs.gaps_detected=$GAPS_DETECTED"
+          echo "vars.FIX_DETECTED_GAPS == 'Y': $FIX_DETECTED_GAPS_IS_Y"
+          echo "github.event_name == 'schedule': $IS_SCHEDULE"
+          echo "github.event_name == 'workflow_dispatch': $IS_WORKFLOW_DISPATCH"
+          echo "inputs.sync_to_sheets == 'Y': $SYNC_TO_SHEETS_IS_Y"
+          echo "Google Sheets sync will run: $SHEETS_SYNC_CONDITIONS_SATISFIED"
+          echo "Remediation will run: $REMEDIATION_CONDITIONS_SATISFIED"
+
       - name: Install BI sync dependencies
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y' }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y') }}
         run: python -m pip install -r requirements.txt
 
       - name: Sync compliance reports to Google Sheets
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y' }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y') }}
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
           GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}

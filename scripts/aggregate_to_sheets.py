@@ -196,15 +196,23 @@ def sync_to_google_sheets(
     latest_worksheet = get_or_create_worksheet(spreadsheet, LATEST_WORKSHEET_TITLE)
     history_worksheet = get_or_create_worksheet(spreadsheet, HISTORY_WORKSHEET_TITLE)
     normalized = normalize_compliance_bits(dataframe)
-    latest_rows = sheet_rows(latest_snapshot(normalized))
+    latest = latest_snapshot(normalized)
+    latest_rows = sheet_rows(latest)
 
     latest_worksheet.clear()
     latest_worksheet.update(latest_rows)
     appended_rows = append_new_history_rows(history_worksheet, normalized)
+    latest_audit_date = str(latest["audit_date"].max())
+    latest_row_count = len(latest_rows) - 1
+    print(f"Latest worksheet: wrote {latest_row_count} row(s) for audit_date {latest_audit_date}.")
+    if appended_rows:
+        print(f"History worksheet: appended {appended_rows} new row(s).")
+    else:
+        print("History worksheet: no new rows to append.")
     print(
         "Success: wrote "
-        f"{len(latest_rows) - 1} latest rows and appended {appended_rows} history rows "
-        f"to Google Sheet ID {sheet_id}."
+        f"{latest_row_count} latest rows and appended {appended_rows} history rows "
+        "to Google Sheets."
     )
 
 
