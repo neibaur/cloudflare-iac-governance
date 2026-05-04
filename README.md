@@ -202,7 +202,7 @@ Actions -> Secrets -> `REAL_TFVARS`. GitHub stores it as a single string, and
 the workflow materializes it into a `.tfvars` file at runtime; this is why the
 helper outputs HCL instead of JSON.
 
-Do not commit the generated output or paste real zone IDs into
+Do not commit the generated output, paste real zone IDs into
 `terraform/ci.auto.tfvars`, or use `ci.auto.tfvars` for anything except mock CI
 values. `REAL_TFVARS` is only materialized during guarded remediation workflows.
 
