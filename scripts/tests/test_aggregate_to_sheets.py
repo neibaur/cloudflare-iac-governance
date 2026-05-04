@@ -159,7 +159,7 @@ def test_aggregate_reports_fails_when_matching_csvs_are_empty(report_workspace):
         aggregate_to_sheets.aggregate_reports(reports_dir)
 
 
-def test_sync_to_google_sheets_overwrites_latest_and_appends_history(mocker):
+def test_sync_to_google_sheets_overwrites_latest_and_appends_history(mocker, capsys):
     latest_worksheet = mocker.Mock(name="latest_worksheet")
     history_worksheet = mocker.Mock(name="history_worksheet")
     history_worksheet.col_values.return_value = ["audit_date", "20260430T010000Z"]
@@ -216,6 +216,51 @@ def test_sync_to_google_sheets_overwrites_latest_and_appends_history(mocker):
     history_worksheet.append_rows.assert_called_once_with(
         [["20260430T020000Z", "Domain 01", 1], ["20260430T020000Z", "Domain 02", 0]]
     )
+    output = capsys.readouterr().out
+    assert "Latest worksheet: wrote 2 row(s) for audit_date 20260430T020000Z." in output
+    assert "History worksheet: appended 2 new row(s)." in output
+    assert "Success: wrote 2 latest rows and appended 2 history rows to Google Sheets." in output
+    assert "sheet-id-123" not in output
+
+
+def test_sync_to_google_sheets_logs_when_history_is_current(mocker, capsys):
+    latest_worksheet = mocker.Mock(name="latest_worksheet")
+    history_worksheet = mocker.Mock(name="history_worksheet")
+    history_worksheet.col_values.return_value = ["audit_date", "20260430T020000Z"]
+    spreadsheet = mocker.Mock(name="spreadsheet")
+    spreadsheet.worksheet.side_effect = lambda title: {
+        "latest": latest_worksheet,
+        "history": history_worksheet,
+    }[title]
+    client = mocker.Mock(name="client")
+    client.open_by_key.return_value = spreadsheet
+    mocker.patch("scripts.aggregate_to_sheets.gspread.service_account", return_value=client)
+    dataframe = pd.DataFrame(
+        [
+            {
+                "audit_date": "20260430T020000Z",
+                "domain_name": "Domain 01",
+                "is_compliant": True,
+            }
+        ]
+    )
+
+    aggregate_to_sheets.sync_to_google_sheets(
+        dataframe,
+        Path("service_account.json"),
+        spreadsheet_id="sheet-id-123",
+    )
+
+    latest_worksheet.clear.assert_called_once_with()
+    latest_worksheet.update.assert_called_once_with(
+        [["audit_date", "domain_name", "is_compliant"], ["20260430T020000Z", "Domain 01", 1]]
+    )
+    history_worksheet.append_rows.assert_not_called()
+    output = capsys.readouterr().out
+    assert "Latest worksheet: wrote 1 row(s) for audit_date 20260430T020000Z." in output
+    assert "History worksheet: no new rows to append." in output
+    assert "Success: wrote 1 latest rows and appended 0 history rows to Google Sheets." in output
+    assert "sheet-id-123" not in output
 
 
 def test_sync_to_google_sheets_creates_missing_worksheets_and_headers_history(mocker):

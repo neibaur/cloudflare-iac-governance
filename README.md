@@ -28,7 +28,7 @@ Cloudflare provider v5 migration guidance is tracked separately in
 flowchart LR
     terraform[Terraform] --> actions[GitHub Actions]
     actions --> audit[Python Compliance Audit]
-    audit --> decision{Drift detected and FIX_DETECTED_GAPS = Y?}
+    audit --> decision{Manual remediation gates met?}
     decision -- Yes --> apply[Terraform Apply with REAL_TFVARS]
     apply --> reaudit[Second Compliance Audit]
     reaudit --> verify{Gaps remain?}
@@ -40,16 +40,29 @@ flowchart LR
 ```
 
 The main CI workflow validates Terraform, runs the Cloudflare compliance audit,
-archives CSV reports, and syncs a privacy-safe aggregate dataset to the
-`Cloudflare_Compliance_Main` Google Sheet for BI dashboards.
+archives CSV reports, and updates Google Sheets on the weekly schedule. Manual
+dispatch can also run guarded remediation or sync a privacy-safe aggregate
+dataset to the `Cloudflare_Compliance_Main` Google Sheet for BI dashboards.
+
+## Workflow Behavior
+
+| Trigger | Quality checks | Read-only Cloudflare audit | Compliance report artifact | Google Sheets sync | Remediation |
+| --- | --- | --- | --- | --- | --- |
+| Pull request | Yes | No | No | No | Never |
+| Push to `main` | Yes | Yes | Yes | No | Never |
+| Weekly schedule | Yes | Yes | Yes | Yes, automatically | Never |
+| Manual dispatch | Yes | Yes | Yes | Only with `sync_to_sheets=Y` | Only with `run_remediation=Y`, `FIX_DETECTED_GAPS=Y`, and detected gaps |
 
 ## Safety & Circuit Breakers
 
-Automated remediation is controlled by the GitHub Variable `FIX_DETECTED_GAPS`.
-When the value is `Y`, the workflow can materialize the private `REAL_TFVARS`
-secret just long enough to run `terraform apply` against real Cloudflare zones.
-When the variable is unset or set to `N`, the workflow audits, uploads reports,
-and syncs BI data without attempting changes.
+Pushes to `main` run audit and reporting only. Remediation is manual-only: start
+the workflow with `workflow_dispatch`, set `run_remediation=Y`, and keep the
+repository-level GitHub Variable `FIX_DETECTED_GAPS=Y`.
+
+When all remediation gates are satisfied, the workflow materializes the private
+`REAL_TFVARS` secret just long enough to run `terraform apply` against real
+Cloudflare zones. When any gate is not satisfied, it audits and uploads reports
+without attempting changes.
 
 After remediation, the workflow immediately runs a second audit. If gaps remain,
 the build fails instead of retrying indefinitely. This makes failed remediation
@@ -114,7 +127,7 @@ Generate the compliance trend summary:
 python scripts/generate_compliance_summary.py
 ```
 
-Sync historical audit reports to Google Sheets:
+Sync historical audit reports to Google Sheets locally:
 
 ```powershell
 python scripts/aggregate_to_sheets.py
@@ -128,9 +141,11 @@ domain mappings in your local `terraform/terraform.tfvars` file.
 
 Pull request workflows never run `terraform apply`, remediation, Cloudflare
 audits, or Google Sheets sync. State-aware audit and report upload run from the
-Terraform CI workflow on `main` or by manual dispatch. Remediation requires a
-manual workflow dispatch with `run_remediation=Y` and the GitHub Variable
-`FIX_DETECTED_GAPS=Y`.
+Terraform CI workflow on `main`, by weekly schedule, or by manual dispatch.
+Google Sheets sync runs automatically on the weekly schedule, and from manual
+dispatch only with `sync_to_sheets=Y`. Weekly schedule runs never remediate.
+Manual remediation also requires `run_remediation=Y`, the repository-level
+GitHub Variable `FIX_DETECTED_GAPS=Y`, and detected compliance gaps.
 
 Never edit Terraform state files manually. Real `.tfvars` content must stay in
 local ignored files or GitHub Secrets.
