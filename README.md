@@ -22,6 +22,15 @@ ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
 Cloudflare provider v5 migration guidance is tracked separately in
 [docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
 
+## Governance
+
+Project operating rules live in [AGENTS.md](AGENTS.md). Pull requests should use
+the [.github/pull_request_template.md](.github/pull_request_template.md), and
+ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
+
+Cloudflare provider v5 migration guidance is tracked separately in
+[docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
+
 ## Architecture
 
 ```mermaid
@@ -68,8 +77,13 @@ After remediation, the workflow immediately runs a second audit. If gaps remain,
 the build fails instead of retrying indefinitely. This makes failed remediation
 visible to the administrator and prevents an unsafe apply loop.
 
-`REAL_TFVARS` is only used during remediation workflows when
-`FIX_DETECTED_GAPS=Y`.
+`REAL_TFVARS` is only used during guarded remediation workflows. Keep
+`FIX_DETECTED_GAPS` as a repository-level GitHub Actions variable unless the job
+declares an environment. If `FIX_DETECTED_GAPS` is environment-scoped, the job
+must be associated with that environment before `vars.FIX_DETECTED_GAPS` is
+visible to the workflow. The workflow checks `vars.FIX_DETECTED_GAPS` directly;
+it does not need a job-level `FIX_DETECTED_GAPS` environment variable for
+remediation gating.
 
 ## Local Setup
 
@@ -93,8 +107,9 @@ Real Terraform values belong in an ignored local file such as
 
 ## Validation
 
-Run the local quality gate and Terraform safety checks:
-Always run validation using the virtual environment to ensure dev dependencies (e.g., ruff) are available.
+Run the local quality gate and Terraform safety checks. Always run validation
+using the virtual environment to ensure dev dependencies, such as `ruff`, are
+available.
 
 ```powershell
 .venv\Scripts\python scripts/run_all_checks.py
