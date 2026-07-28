@@ -2,21 +2,27 @@ terraform {
   required_providers {
     cloudflare = {
       source  = "cloudflare/cloudflare"
-      version = "~> 4.52"
+      version = "~> 5.22"
     }
   }
 }
 
-resource "cloudflare_zone_settings_override" "this" {
-  zone_id = var.zone_id
-
-  settings {
-    ssl              = var.ssl
-    security_level   = var.security_level
+locals {
+  zone_settings = {
     always_use_https = var.always_use_https
-    min_tls_version  = var.min_tls_version
     browser_check    = var.browser_integrity_check
+    min_tls_version  = var.min_tls_version
+    security_level   = var.security_level
+    ssl              = var.ssl
   }
+}
+
+resource "cloudflare_zone_setting" "this" {
+  for_each = local.zone_settings
+
+  zone_id    = var.zone_id
+  setting_id = each.key
+  value      = each.value
 }
 
 resource "cloudflare_bot_management" "this" {
