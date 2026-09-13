@@ -297,17 +297,59 @@ def test_list_all_zones_prints_terraform_hcl(mocker, capsys):
     assert capsys.readouterr().out == f"{hcl}\n"
 
 
-def test_list_all_zones_reports_missing_zone_read(mocker):
+@pytest.mark.parametrize(
+    ("error_code", "expected_message", "unexpected_message"),
+    [
+        (
+            9109,
+            "expired, revoked, or deleted",
+            "Confirm the token includes Zone:Read permissions",
+        ),
+        (
+            1000,
+            "token is invalid or the verify endpoint does not match the token type",
+            "Confirm the token includes Zone:Read permissions",
+        ),
+        (None, "Confirm the token includes Zone:Read permissions", "expired, revoked, or deleted"),
+    ],
+)
+def test_list_all_zones_explains_zone_access_failure(
+    mocker, error_code, expected_message, unexpected_message
+):
     auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
     mocker.patch.object(auditor, "verify_connection", return_value={"status": "active"})
-    mocker.patch.object(
-        auditor,
-        "_request",
-        side_effect=CloudflareAPIError("Cloudflare API returned HTTP 403: forbidden"),
+    errors = [] if error_code is None else [{"code": error_code, "message": "request rejected"}]
+    response = httpx.Response(
+        403,
+        json={"success": False, "errors": errors},
+        request=httpx.Request("GET", "https://api.example.test/zones"),
     )
+    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
 
-    with pytest.raises(CloudflareAPIError, match="Zone:Read"):
+    with pytest.raises(CloudflareAPIError) as excinfo:
         auditor.list_all_zones()
+
+    assert expected_message in str(excinfo.value)
+    assert unexpected_message not in str(excinfo.value)
+    assert excinfo.value.status_code == 403
+    assert excinfo.value.error_codes == (() if error_code is None else (error_code,))
+
+
+def test_list_all_zones_explains_ip_filtering_on_github_runners(mocker):
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
+    mocker.patch.object(auditor, "verify_connection", return_value={"status": "active"})
+    response = httpx.Response(
+        403,
+        json={"success": False, "errors": [{"code": 9109, "message": "request rejected"}]},
+        request=httpx.Request("GET", "https://api.example.test/zones"),
+    )
+    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
+
+    with pytest.raises(CloudflareAPIError) as excinfo:
+        auditor.list_all_zones()
+
+    assert "IP allowlist" in str(excinfo.value)
+    assert "GitHub-hosted runners have no stable egress IP" in str(excinfo.value)
 
 
 def test_audit_security_posture_reports_deviations(mocker, capsys):
