@@ -259,10 +259,30 @@ repository root:
 ```
 CLOUDFLARE_API_TOKEN=<the read-only agent token>
 CLOUDFLARE_ACCOUNT_ID=<same account id>
+GOOGLE_SHEET_ID=<the compliance sheet id>
 ```
 
-Omit `GOOGLE_SHEET_ID` and `FIX_DETECTED_GAPS` — agents have no reason to reach the Sheets sync or
-the remediation gate.
+`GOOGLE_SHEET_ID` belongs here. It is an identifier, not a credential —
+`scripts/aggregate_to_sheets.py` reads it to address a spreadsheet, and knowing it grants nothing
+without the key that opens it. Withholding it blocks legitimate Sheets work and protects nothing.
+The credential that actually gates that work is `service_account.json`, an unscoped GCP private
+key, and that stays out of worktrees entirely.
+
+`FIX_DETECTED_GAPS` is optional and makes no local difference either way. No Python in this
+repository reads it; it is consumed only by GitHub Actions as `vars.FIX_DETECTED_GAPS` in
+`.github/workflows/terraform-ci.yml`. In a local `.env` or `.env.agent` it is inert — it gates
+nothing and never has. Include it as a statement of intent if you like, but do not mistake it for
+a safety control.
+
+### Why the file separation earns its keep
+
+`.env` and `.env.agent` may currently hold the same read-only token, which makes the separation
+look like pointless duplication. It is not. Its value is latent: the moment an edit-capable token
+is written to `.env` — which happens only when a task needs one — every worktree would silently
+inherit edit capability if there were no separate agent file. The separation costs nothing while
+the two tokens match, and prevents a silent privilege escalation the day they stop matching.
+
+The faster TTL on the agent token is a secondary benefit, not the reason the file exists.
 
 `.env.agent` is covered by the `.env.*` rule in `.gitignore`. Verify before relying on it:
 
@@ -298,6 +318,8 @@ CI and GitHub Secrets are untouched, which is the point of keeping the two separ
   Assume both will happen and rely on the scoping.
 - It does not protect `service_account.json`. That is an unscoped GCP private key with no
   equivalent read-only mode; keep it out of worktrees entirely and broker Sheets work instead.
+  `GOOGLE_SHEET_ID` sitting in `.env.agent` does not weaken this — the sheet id addresses the
+  spreadsheet, the service account key is what opens it.
 - It does not protect `terraform.tfvars`, which carries real domains and zone IDs. That is
   configuration disclosure rather than credential compromise, but it still does not belong in a
   worktree unless a task genuinely needs it.
