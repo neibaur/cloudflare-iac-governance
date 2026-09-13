@@ -30,6 +30,12 @@
     only with a loud warning. The destination is always written as '.env' so existing code paths
     (python-dotenv, scripts, terraform wrappers) work unchanged.
 
+    A second warning fires when '.env.agent' exists but carries the same CLOUDFLARE_API_TOKEN
+    value as '.env', which happens when the agent file was created by copying the operator file.
+    The separation then looks real but is not. Only the token value is compared, and only as a
+    SHA-256 hash: the two files may differ in other keys and still share the credential, and the
+    token value itself is never read into any output. Neither warning blocks the bootstrap.
+
 .PARAMETER WithTfvars
     Copy 'terraform/terraform.tfvars' and 'terraform/secrets.auto.tfvars' from the source clone.
     Real Terraform inputs: needed only for tasks that plan against real managed infrastructure.
@@ -212,6 +218,59 @@ function Copy-SecretFile {
     $script:TouchedPaths += $DestinationRelative
 }
 
+# Returns the SHA-256 hex digest of one key's value in a dotenv-style file, or $null when the
+# key is absent or empty. The value is never returned, printed, or logged -- only its digest,
+# so callers can compare two files without either token entering the transcript.
+#
+# Parsing is deliberately literal: Trim, IndexOf, StartsWith and Substring only. The -match and
+# -replace operators take regex, and a token is arbitrary text that may contain metacharacters.
+function Get-EnvValueHash {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Key
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+
+    $value = $null
+    foreach ($line in (Get-Content -LiteralPath $Path)) {
+        $trimmed = $line.Trim()
+        if ($trimmed.Length -eq 0) { continue }
+        if ($trimmed.StartsWith('#')) { continue }
+        if ($trimmed.StartsWith('export ')) { $trimmed = $trimmed.Substring(7).Trim() }
+
+        $sep = $trimmed.IndexOf('=')
+        if ($sep -lt 1) { continue }
+        if (-not ($trimmed.Substring(0, $sep).Trim() -eq $Key)) { continue }
+
+        $candidate = $trimmed.Substring($sep + 1).Trim()
+        if ($candidate.Length -ge 2) {
+            $first = $candidate.Substring(0, 1)
+            $last = $candidate.Substring($candidate.Length - 1, 1)
+            if (($first -eq $last) -and (($first -eq '"') -or ($first -eq "'"))) {
+                $candidate = $candidate.Substring(1, $candidate.Length - 2)
+            }
+        }
+        # Last assignment wins, matching how dotenv loaders resolve a repeated key.
+        $value = $candidate
+    }
+
+    if (-not $value) { return $null }
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($value))
+    }
+    finally {
+        $sha.Dispose()
+        $value = $null
+    }
+
+    $builder = New-Object System.Text.StringBuilder
+    foreach ($b in $bytes) { [void]$builder.Append($b.ToString('x2')) }
+    return $builder.ToString()
+}
+
 if ($wantAnySecret) {
     if (-not $SourceRepo -or -not (Test-Path $SourceRepo)) {
         throw "Cannot copy secrets: source clone not found. Pass -SourceRepo <path>."
@@ -222,10 +281,31 @@ if ($wantAnySecret) {
     Write-Host "These files are gitignored. Consume them; never print or commit their contents." -ForegroundColor Yellow
 
     if ($wantToken) {
-        if (Test-Path (Join-Path $SourceRepo '.env.agent')) {
+        $sourceAgentEnv = Join-Path $SourceRepo '.env.agent'
+        $sourceOperatorEnv = Join-Path $SourceRepo '.env'
+
+        if (Test-Path $sourceAgentEnv) {
+            $agentTokenHash = Get-EnvValueHash -Path $sourceAgentEnv -Key 'CLOUDFLARE_API_TOKEN'
+            $operatorTokenHash = Get-EnvValueHash -Path $sourceOperatorEnv -Key 'CLOUDFLARE_API_TOKEN'
+
+            if ($agentTokenHash -and $operatorTokenHash -and ($agentTokenHash -eq $operatorTokenHash)) {
+                $fingerprint = $agentTokenHash.Substring(0, 12)
+                Write-Host ""
+                Write-Host "WARNING: .env.agent and .env hold the SAME Cloudflare API token." -ForegroundColor Yellow
+                Write-Host "  Both resolve to token sha256 $fingerprint (value not shown, never logged)." -ForegroundColor Yellow
+                Write-Host "  The separation is nominal: this worktree gets exactly the Cloudflare" -ForegroundColor Yellow
+                Write-Host "  rights the operator holds, not a narrowed subset. Today's token is" -ForegroundColor Yellow
+                Write-Host "  read-only, so nothing is over-exposed yet -- but the day an" -ForegroundColor Yellow
+                Write-Host "  edit-capable token is written to .env, every worktree bootstrapped" -ForegroundColor Yellow
+                Write-Host "  this way silently inherits edit capability with no further signal." -ForegroundColor Yellow
+                Write-Host "  Fix: mint a separate read-only, narrowly scoped agent token and put" -ForegroundColor Yellow
+                Write-Host "  it in .env.agent so the two files stop sharing a credential." -ForegroundColor Yellow
+                Write-Host "  Continuing with the bootstrap." -ForegroundColor Yellow
+            }
+
             Copy-SecretFile -SourceRelative '.env.agent' -DestinationRelative '.env'
         }
-        elseif (Test-Path (Join-Path $SourceRepo '.env')) {
+        elseif (Test-Path $sourceOperatorEnv) {
             Write-Host ""
             Write-Host "WARNING: no .env.agent in the source clone." -ForegroundColor Yellow
             Write-Host "  Falling back to .env, the operator's UNRESTRICTED Cloudflare token." -ForegroundColor Yellow
