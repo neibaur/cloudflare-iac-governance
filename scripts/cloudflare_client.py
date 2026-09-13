@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
@@ -31,6 +32,18 @@ SECURITY_CSV_HEADERS = (
 LATEST_SECURITY_REPORT = "security_compliance_report.csv"
 DEFAULT_REPORT_DIR = Path("reports")
 
+ACCOUNT_TOKEN_VERIFY_SUFFIX = "/tokens/verify"
+USER_TOKEN_VERIFY_PATH = "/user/tokens/verify"
+REDACTED_ACCOUNT_ID = "<redacted-account-id>"
+
+# Cloudflare rejects a token that is not valid *for the endpoint it was sent to* with the same
+# code it uses for a genuinely bad secret, so code 1000 alone cannot tell the two apart.
+TOKEN_INVALID_CODE = 1000
+# 9109 is the opposite situation: the secret is recognised but the token is expired, revoked,
+# deleted, or blocked by client IP filtering.
+TOKEN_REVOKED_CODE = 9109
+AUTH_FAILURE_STATUS_CODES = frozenset({400, 401, 403})
+
 
 class CloudflareAuditor:
     """Read-only Cloudflare audit client using a scoped API token."""
@@ -51,31 +64,89 @@ class CloudflareAuditor:
         self.base_url = base_url.rstrip("/")
 
     def verify_connection(self) -> dict[str, Any]:
+        """Verify the API token against whichever token list actually owns it.
+
+        Cloudflare keeps account-owned and user-owned tokens in separate namespaces with
+        separate verify endpoints. ``/accounts/{id}/tokens/verify`` accepts only an Account
+        API Token; a perfectly valid User API Token is rejected there with HTTP 401 and
+        code 1000. The account endpoint is tried first, and an auth-shaped failure falls
+        back to ``/user/tokens/verify``.
+
+        The returned value is the raw Cloudflare token object. A successful verification can
+        still report a ``status`` of ``expired`` or ``disabled``, so callers must read
+        ``status`` rather than treating a returned result as proof of health.
+        """
+        account_path = f"{self._account_path}{ACCOUNT_TOKEN_VERIFY_SUFFIX}"
+
         try:
-            payload = self._request(f"{self._account_path}/tokens/verify")
+            return self._verify_token_at(account_path)
         except CloudflareAPIError as exc:
-            raise CloudflareAPIError(
-                "Unable to verify the Cloudflare API token. Confirm "
-                "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are set locally and "
-                "the token is valid for the account."
-            ) from exc
+            if not self._is_auth_failure(exc):
+                raise
+            account_failure = exc
+
+        try:
+            return self._verify_token_at(USER_TOKEN_VERIFY_PATH)
+        except CloudflareAPIError as user_failure:
+            raise self._error(
+                "Unable to verify the Cloudflare API token against either token endpoint. "
+                f"Account token endpoint ({account_path}) failed: {account_failure} | "
+                f"User token endpoint ({USER_TOKEN_VERIFY_PATH}) failed: {user_failure}. "
+                + self._token_failure_hint(account_failure, user_failure),
+                status_code=user_failure.status_code,
+                error_codes=user_failure.error_codes,
+            ) from user_failure
+
+    def _verify_token_at(self, path: str) -> dict[str, Any]:
+        payload = self._request(path)
 
         if not payload.get("success", False):
             errors = payload.get("errors") or []
-            raise CloudflareAPIError(
-                "Unable to verify the Cloudflare API token. Confirm "
-                "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are set locally and "
-                "the token is valid for the account. "
-                f"Cloudflare returned: {errors}"
+            raise self._error(
+                f"Cloudflare rejected token verification at {path}: {errors}",
+                error_codes=self._error_codes(errors),
             )
 
         result = payload.get("result")
         if not isinstance(result, dict):
-            raise CloudflareAPIError(
-                "Cloudflare token verification did not include a result object."
+            raise self._error(
+                f"Cloudflare token verification at {path} did not include a result object."
             )
 
         return result
+
+    @staticmethod
+    def _is_auth_failure(exc: CloudflareAPIError) -> bool:
+        """True when a failure looks like a token/endpoint problem worth retrying elsewhere."""
+        if TOKEN_INVALID_CODE in exc.error_codes or TOKEN_REVOKED_CODE in exc.error_codes:
+            return True
+
+        return exc.status_code in AUTH_FAILURE_STATUS_CODES
+
+    @staticmethod
+    def _token_failure_hint(*failures: CloudflareAPIError) -> str:
+        codes = {code for failure in failures for code in failure.error_codes}
+
+        hints: list[str] = []
+        if TOKEN_INVALID_CODE in codes:
+            hints.append(
+                f"Cloudflare error {TOKEN_INVALID_CODE} means the token is not valid for the "
+                "endpoint it was sent to, or the token secret itself is wrong. It does not "
+                "indicate a missing or mismatched account ID."
+            )
+        if TOKEN_REVOKED_CODE in codes:
+            hints.append(
+                f"Cloudflare error {TOKEN_REVOKED_CODE} means the opposite: the token is "
+                "expired, revoked, or deleted, or client IP filtering blocked this caller."
+            )
+        if not hints:
+            hints.append(
+                "Confirm CLOUDFLARE_API_TOKEN holds the token secret and that the token still "
+                "exists in either the user or the account token list."
+            )
+
+        hints.append("See docs/cloudflare-api-token-runbook.md.")
+        return " ".join(hints)
 
     def list_all_zones(self) -> str:
         zones = self._list_zones()
@@ -199,16 +270,20 @@ class CloudflareAuditor:
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPStatusError as exc:
-            raise CloudflareAPIError(
-                f"Cloudflare API returned HTTP {exc.response.status_code}: {exc.response.text}"
-            ) from exc
+            # Deliberately not chained: httpx puts the full request URL in its own message,
+            # which would reintroduce the account ID into any traceback or CI log.
+            raise self._error(
+                f"Cloudflare API returned HTTP {exc.response.status_code}: {exc.response.text}",
+                status_code=exc.response.status_code,
+                error_codes=self._error_codes_from_body(exc.response.text),
+            ) from None
         except httpx.RequestError as exc:
-            raise CloudflareAPIError(f"Cloudflare API request failed: {exc}") from exc
+            raise self._error(f"Cloudflare API request failed: {exc}") from None
         except ValueError as exc:
-            raise CloudflareAPIError("Cloudflare API response was not valid JSON.") from exc
+            raise self._error("Cloudflare API response was not valid JSON.") from exc
 
         if not isinstance(payload, dict):
-            raise CloudflareAPIError("Cloudflare API response was not a JSON object.")
+            raise self._error("Cloudflare API response was not a JSON object.")
 
         return cast(dict[str, Any], payload)
 
@@ -235,6 +310,50 @@ class CloudflareAuditor:
             zones.extend(self._zones_from_payload(payload))
 
         return zones
+
+    def _redact(self, text: str) -> str:
+        """Replace the account ID with a placeholder so it cannot leak through error text."""
+        for value in (self.account_id, quote(self.account_id, safe="")):
+            if value:
+                text = text.replace(value, REDACTED_ACCOUNT_ID)
+
+        return text
+
+    def _error(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_codes: tuple[int, ...] = (),
+    ) -> CloudflareAPIError:
+        return CloudflareAPIError(
+            self._redact(message),
+            status_code=status_code,
+            error_codes=error_codes,
+        )
+
+    @staticmethod
+    def _error_codes(errors: Any) -> tuple[int, ...]:
+        if not isinstance(errors, list):
+            return ()
+
+        return tuple(
+            error["code"]
+            for error in errors
+            if isinstance(error, dict) and isinstance(error.get("code"), int)
+        )
+
+    @classmethod
+    def _error_codes_from_body(cls, body: str) -> tuple[int, ...]:
+        try:
+            payload = json.loads(body)
+        except ValueError:
+            return ()
+
+        if not isinstance(payload, dict):
+            return ()
+
+        return cls._error_codes(payload.get("errors"))
 
     @property
     def _account_path(self) -> str:
@@ -366,4 +485,19 @@ class CloudflareAuditor:
 
 
 class CloudflareAPIError(RuntimeError):
-    """Raised when Cloudflare returns an unsuccessful or malformed response."""
+    """Raised when Cloudflare returns an unsuccessful or malformed response.
+
+    Messages raised by :class:`CloudflareAuditor` are redacted: the account ID is replaced
+    with ``REDACTED_ACCOUNT_ID`` so it never reaches a traceback, log, or CI transcript.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_codes: tuple[int, ...] = (),
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.error_codes = tuple(error_codes)

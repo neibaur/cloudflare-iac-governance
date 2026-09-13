@@ -1,0 +1,206 @@
+#!/bin/sh
+# cloudflare-iac-governance :: pre-commit secret-scanning gate
+#
+# Scans ONLY the staged change set and blocks the commit on any finding.
+# Installed repo-wide (primary clone + every agent worktree) via:
+#     pwsh -File scripts/install-git-hooks.ps1
+# See docs/agent-worktree-security.md.
+#
+# Design rules:
+#   - FAIL CLOSED. No scanner available means no commit, never a silent pass.
+#   - NEVER print a matched secret value. Only file, line, and rule id are reported.
+#   - Fast. This runs on every commit, so it scans the staged diff only.
+
+set -u
+
+RED=''
+YEL=''
+RST=''
+if [ -t 2 ]; then
+    RED=$(printf '\033[31m')
+    YEL=$(printf '\033[33m')
+    RST=$(printf '\033[0m')
+fi
+
+say() { printf '%s\n' "$*" >&2; }
+
+fail_banner() {
+    say ""
+    say "${RED}COMMIT BLOCKED: pre-commit secret scan${RST}"
+    say ""
+}
+
+override_notice() {
+    say ""
+    say "The matched values are deliberately NOT printed here. Inspect them yourself with:"
+    say "    git diff --cached -- <file>"
+    say ""
+    say "If this is a genuine secret: unstage the file, remove the value, rotate the credential."
+    say "If this is a false positive: add a scoped allowlist entry to .gitleaks.toml, or append"
+    say "an inline 'gitleaks:allow' comment on the offending line."
+    say ""
+    say "${YEL}Override (deliberate, audited):  git commit --no-verify${RST}"
+    say "${YEL}Using --no-verify on a real finding defeats this gate entirely and puts the${RST}"
+    say "${YEL}credential into git history, where removing it requires a history rewrite.${RST}"
+    say ""
+}
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    fail_banner
+    say "Could not resolve the repository root (git rev-parse --show-toplevel failed)."
+    exit 1
+}
+cd "$REPO_ROOT" || exit 1
+
+# Nothing staged: nothing to scan. `git commit` will reject the empty commit anyway.
+if git diff --cached --quiet --no-ext-diff 2>/dev/null; then
+    exit 0
+fi
+
+# ---------------------------------------------------------------- gitleaks --
+if command -v gitleaks >/dev/null 2>&1; then
+    CONFIG_ARG=""
+    if [ -f "$REPO_ROOT/.gitleaks.toml" ]; then
+        CONFIG_ARG="$REPO_ROOT/.gitleaks.toml"
+    fi
+
+    REPORT=$(mktemp 2>/dev/null) || REPORT="${TMPDIR:-/tmp}/gitleaks-precommit.$$.json"
+    trap 'rm -f "$REPORT"' EXIT INT TERM
+
+    # "gitleaks git --staged", not "gitleaks protect --staged": protect is
+    # deprecated as of 8.x and hidden from --help, so it will eventually be
+    # removed. The git subcommand is the supported form for pre-commit use.
+    # --exit-code 2 separates "leaks found" (2) from "gitleaks errored" (1),
+    # so a broken config fails closed instead of masquerading as a finding.
+    # --redact keeps secret values out of gitleaks' own output; we additionally
+    # discard that output and print only file/line/rule parsed from the report.
+    if [ -n "$CONFIG_ARG" ]; then
+        gitleaks git --staged \
+            --config "$CONFIG_ARG" \
+            --no-banner --redact --exit-code 2 \
+            --report-format json --report-path "$REPORT" \
+            "$REPO_ROOT" >/dev/null 2>&1
+    else
+        gitleaks git --staged \
+            --no-banner --redact --exit-code 2 \
+            --report-format json --report-path "$REPORT" \
+            "$REPO_ROOT" >/dev/null 2>&1
+    fi
+    status=$?
+
+    case "$status" in
+        0)
+            exit 0
+            ;;
+        2)
+            fail_banner
+            say "gitleaks flagged staged content:"
+            say ""
+            # One block per finding: location, rule id, rule description.
+            # The "Match" and "Secret" fields are deliberately never read.
+            # Fields are buffered and flushed on "Fingerprint", which gitleaks
+            # emits last in each record, so key ordering cannot desync output.
+            awk '
+                function val(s) {
+                    sub(/^[ \t]*"[A-Za-z]+"[ \t]*:[ \t]*/, "", s)
+                    sub(/,[ \t]*$/, "", s)
+                    gsub(/^"|"$/, "", s)
+                    return s
+                }
+                /^[ \t]*"RuleID"[ \t]*:/      { rule = val($0) }
+                /^[ \t]*"Description"[ \t]*:/ { desc = val($0) }
+                /^[ \t]*"StartLine"[ \t]*:/   { line = val($0) }
+                /^[ \t]*"File"[ \t]*:/        { file = val($0) }
+                /^[ \t]*"Fingerprint"[ \t]*:/ {
+                    printf "    %s:%s  [rule: %s]\n", file, line, rule
+                    printf "        %s\n", desc
+                    rule = ""; desc = ""; line = ""; file = ""
+                }
+            ' "$REPORT" >&2
+            override_notice
+            exit 1
+            ;;
+        *)
+            fail_banner
+            say "gitleaks exited with an unexpected status ($status) and the scan could not be"
+            say "trusted. Failing closed. Reproduce the error with:"
+            say "    gitleaks git --staged --config .gitleaks.toml --redact --no-banner"
+            say ""
+            say "${YEL}Override (deliberate, audited):  git commit --no-verify${RST}"
+            exit 1
+            ;;
+    esac
+fi
+
+# ---------------------------------------------------------- detect-secrets --
+# Local pre-flight fallback per AGENTS.md. Gitleaks remains the enforcement gate;
+# this only keeps the commit path guarded on a machine that lacks gitleaks.
+if command -v detect-secrets-hook >/dev/null 2>&1 && [ -f "$REPO_ROOT/.secrets.baseline" ]; then
+    say "${YEL}note: gitleaks not found on PATH; falling back to detect-secrets.${RST}"
+
+    # Sanity probe. detect-secrets-hook signals findings with exit 1 and has no
+    # distinct exit code for "I am broken", so a mis-wired console script (venv
+    # moved, interpreter missing) would otherwise look like a finding on every
+    # file. Scanning a known-clean temp file separates the two cases.
+    PROBE="${TMPDIR:-/tmp}/ds-probe.$$"
+    printf 'probe\n' > "$PROBE" 2>/dev/null
+    if ! detect-secrets-hook --baseline "$REPO_ROOT/.secrets.baseline" "$PROBE" >/dev/null 2>&1; then
+        rm -f "$PROBE"
+        fail_banner
+        say "detect-secrets is on PATH but failed its self-check: it reported a finding on a"
+        say "known-clean probe file. The install is broken, so staged content could NOT be"
+        say "scanned. Failing closed."
+        say ""
+        say "Fix with one of:"
+        say "    winget install gitleaks            # preferred, matches the CI gate"
+        say "    pip install --force-reinstall detect-secrets"
+        say ""
+        say "${YEL}Override (deliberate, audited):  git commit --no-verify${RST}"
+        exit 1
+    fi
+    rm -f "$PROBE"
+
+    STAGED=$(git diff --cached --name-only --diff-filter=ACMR)
+    [ -z "$STAGED" ] && exit 0
+
+    # Scanned one file at a time so the failure message can name the offending
+    # file. detect-secrets-hook reports types and locations, never values, and
+    # some builds report nothing at all beyond a non-zero exit - hence this loop.
+    FLAGGED=""
+    OLDIFS=$IFS
+    IFS='
+'
+    for f in $STAGED; do
+        [ -f "$f" ] || continue
+        if ! detect-secrets-hook --baseline "$REPO_ROOT/.secrets.baseline" "$f" >&2; then
+            FLAGGED="$FLAGGED    $f
+"
+        fi
+    done
+    IFS=$OLDIFS
+
+    [ -z "$FLAGGED" ] && exit 0
+
+    fail_banner
+    say "detect-secrets flagged staged content in:"
+    say ""
+    printf '%s' "$FLAGGED" >&2
+    override_notice
+    exit 1
+fi
+
+# ------------------------------------------------------------- fail closed --
+fail_banner
+say "No secret scanner is available on PATH, so staged content could NOT be scanned."
+say ""
+say "Install one before committing:"
+say "    winget install gitleaks            # preferred, matches the CI gate"
+say "    pip install detect-secrets         # local pre-flight fallback"
+say ""
+say "This hook fails closed on purpose: an unscanned commit is treated as an unsafe"
+say "commit, not a safe one."
+say ""
+say "${YEL}Override (deliberate, audited):  git commit --no-verify${RST}"
+say "${YEL}Only use this when you have manually confirmed the staged diff contains no${RST}"
+say "${YEL}credential material.${RST}"
+exit 1

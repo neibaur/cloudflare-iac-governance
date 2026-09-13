@@ -6,7 +6,7 @@ This repository manages Cloudflare security posture with Terraform and Python au
 
 `main` is the production trunk. Changes merged to `main` should already be validated and safe to run against real infrastructure.
 
-`dev` is the staging and experiment branch. Use it for trial changes, cleanup, and validation before promoting work to `main`.
+`main` is the only long-lived branch. Work happens on short-lived branches that are merged into `main` through pull requests and deleted after merge.
 
 ## AI Agent Rules
 
