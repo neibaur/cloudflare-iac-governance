@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,6 +14,35 @@ ENV_FILE = Path(".env")
 REPORT_DIR = Path("reports")
 CLOUDFLARE_API_TOKEN = "CLOUDFLARE_API_TOKEN"
 CLOUDFLARE_ACCOUNT_ID = "CLOUDFLARE_ACCOUNT_ID"
+TOKEN_EXPIRY_WARNING_DAYS = 14
+
+
+def warn_if_token_expires_soon(
+    verification: dict[str, object],
+    *,
+    now: datetime | None = None,
+) -> None:
+    """Warn on stderr when Cloudflare reports an expired or soon-expiring token."""
+    expires_on = verification.get("expires_on")
+    if not isinstance(expires_on, str):
+        return
+
+    try:
+        expires_at = datetime.fromisoformat(expires_on.replace("Z", "+00:00"))
+    except ValueError:
+        return
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+
+    current_time = now or datetime.now(UTC)
+    if expires_at <= current_time:
+        print(f"ERROR: Cloudflare API token expired on {expires_on}.", file=sys.stderr)
+    elif expires_at <= current_time + timedelta(days=TOKEN_EXPIRY_WARNING_DAYS):
+        print(
+            f"WARNING: Cloudflare API token expires on {expires_on} "
+            f"(within {TOKEN_EXPIRY_WARNING_DAYS} days).",
+            file=sys.stderr,
+        )
 
 
 def read_cloudflare_env(env_file: Path = ENV_FILE) -> tuple[str, str]:
@@ -48,19 +79,22 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     token, account_id = read_cloudflare_env()
-    auditor = CloudflareAuditor(token, account_id)
+    with CloudflareAuditor(token, account_id) as auditor:
+        if args.verify:
+            verification = auditor.verify_connection()
+            warn_if_token_expires_soon(verification)
+            print(verification)
+            return 0
 
-    if args.verify:
-        print(auditor.verify_connection())
-        return 0
+        if args.list:
+            auditor.list_all_zones()
+            return 0
 
-    if args.list:
-        auditor.list_all_zones()
-        return 0
-
-    if args.audit:
-        auditor.audit_security_posture(REPORT_DIR)
-        return 0
+        if args.audit:
+            verification = auditor.verify_connection()
+            warn_if_token_expires_soon(verification)
+            auditor.audit_security_posture(REPORT_DIR)
+            return 0
 
     return 1
 

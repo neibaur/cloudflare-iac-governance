@@ -254,10 +254,11 @@ def test_account_id_never_appears_in_verification_failure_text(mocker):
         },
         request=httpx.Request("GET", f"{BASE_URL}{ACCOUNT_VERIFY_PATH}"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
+    auditor = make_auditor()
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError) as excinfo:
-        make_auditor().verify_connection()
+        auditor.verify_connection()
 
     rendered = "".join(
         traceback.format_exception(type(excinfo.value), excinfo.value, excinfo.value.__traceback__)
@@ -276,8 +277,8 @@ def test_account_id_never_appears_in_zone_request_failure_text(mocker):
             f"{BASE_URL}/zones?account.id={PLACEHOLDER_ACCOUNT_ID}&page=1&per_page=50",
         ),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
     auditor = make_auditor()
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError) as excinfo:
         auditor._request(auditor._zones_path(1))
@@ -295,10 +296,11 @@ def test_request_error_codes_are_captured_from_the_response_body(mocker):
         json={"success": False, "errors": [{"code": 9109, "message": "Invalid access token"}]},
         request=httpx.Request("GET", f"{BASE_URL}/failure"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
+    auditor = make_auditor()
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError) as excinfo:
-        make_auditor()._request("/failure")
+        auditor._request("/failure")
 
     assert excinfo.value.status_code == 403
     assert excinfo.value.error_codes == (9109,)
@@ -321,13 +323,13 @@ def test_verify_connection_reaches_the_user_endpoint_over_http(mocker):
         json=verify_payload(expires_on="2099-01-01T23:59:59Z"),
         request=httpx.Request("GET", f"{BASE_URL}{USER_TOKEN_VERIFY_PATH}"),
     )
-    http_get = mocker.patch(
-        "scripts.cloudflare_client.httpx.get",
-        side_effect=[account_response, user_response],
+    auditor = make_auditor()
+    http_get = mocker.patch.object(
+        auditor._client, "get", side_effect=[account_response, user_response]
     )
 
-    assert make_auditor().verify_connection()["status"] == "active"
+    assert auditor.verify_connection()["status"] == "active"
     assert [call.args[0] for call in http_get.call_args_list] == [
-        f"{BASE_URL}{ACCOUNT_VERIFY_PATH}",
-        f"{BASE_URL}{USER_TOKEN_VERIFY_PATH}",
+        ACCOUNT_VERIFY_PATH,
+        USER_TOKEN_VERIFY_PATH,
     ]
