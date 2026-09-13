@@ -3,24 +3,15 @@ Cloudflare Infrastructure Management (IaC) for API and Terraform bulk retrieval 
 
 ## Branch And PR Expectations
 
-`main` is the production trunk. `dev` is the staging and experiment branch.
-Pull requests should target `dev` or `main`, pass the lightweight quality
-workflow, and avoid generated reports, local secrets, Terraform state, or real
-infrastructure values.
+`main` is the only long-lived production trunk. Work happens on short-lived
+branches that target `main` through pull requests and are deleted after merge.
+Pull requests must pass the lightweight quality workflow and avoid generated
+reports, local secrets, Terraform state, or real infrastructure values.
 
 PR validation is intentionally non-destructive. It runs Python quality checks,
 Terraform formatting, and Terraform validation. Terraform plans may use mock
 values from `terraform/ci.auto.tfvars` only in a safe mock-state/no-real-state
 context.
-
-## Governance
-
-Project operating rules live in [AGENTS.md](AGENTS.md). Pull requests should use
-the [.github/pull_request_template.md](.github/pull_request_template.md), and
-ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
-
-Cloudflare provider v5 migration guidance is tracked separately in
-[docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
 
 ## Governance
 
