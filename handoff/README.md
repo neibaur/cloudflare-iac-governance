@@ -34,6 +34,27 @@ a branch, and violating this produces detached HEAD and lock errors across every
    sets its status file to `DONE` or `BLOCKED`. The live copy is what the next worker reads
    without needing to pull.
 6. **Release.** The orchestrator archives the inbox file and resets the status file to `IDLE`.
+7. **Prune.** After merging, the orchestrator **deletes** the note from `handoff/notes/` and the
+   copy from `handoff-live/outbox/`. See below.
+
+## Notes are pruned on merge
+
+A completion note exists to carry work from a worker to the orchestrator and to give a reviewer
+context inside the PR. Once the branch is merged, it has done its job and is **deleted**.
+
+The orchestrator prunes as part of merging: remove `handoff/notes/<task-id>.md` and
+`handoff-live/outbox/<slot>-<task-id>.md`. Nothing is lost — the note is in git history, reachable
+with `git log --diff-filter=D --name-only -- handoff/notes/` and readable with `git show`.
+
+**Why.** Notes are accurate history that reads exactly like current instruction. They were never
+wrong, so no staleness marker ever applies, and they accumulate without limit. A worker — especially
+a smaller model — cannot reliably tell a six-week-old record of a since-changed decision from a
+standing instruction, and will follow it. An empty `handoff/notes/` directory means every document
+a worker can reach is one it is supposed to act on.
+
+If a note contains a lesson worth keeping, that lesson does not belong in the note. Move it into
+the document that is currently correct — `AGENTS.md`, this file, or a doc under `docs/` — in the
+same change that merges the work. Then delete the note.
 
 ## File naming
 

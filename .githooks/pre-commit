@@ -67,6 +67,9 @@ if command -v gitleaks >/dev/null 2>&1; then
     REPORT=$(mktemp 2>/dev/null) || REPORT="${TMPDIR:-/tmp}/gitleaks-precommit.$$.json"
     trap 'rm -f "$REPORT"' EXIT INT TERM
 
+    # "gitleaks git --staged", not "gitleaks protect --staged": protect is
+    # deprecated as of 8.x and hidden from --help, so it will eventually be
+    # removed. The git subcommand is the supported form for pre-commit use.
     # --exit-code 2 separates "leaks found" (2) from "gitleaks errored" (1),
     # so a broken config fails closed instead of masquerading as a finding.
     # --redact keeps secret values out of gitleaks' own output; we additionally
