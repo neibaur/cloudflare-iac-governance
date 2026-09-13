@@ -177,7 +177,7 @@ GOOGLE_SHEET_ID=<sheet-id>
 `GOOGLE_SHEET_ID` only addresses the spreadsheet. The credential that opens it
 is `service_account.json`, which must stay out of worktrees. `.env` is ignored
 explicitly and `.env.agent` is covered by `.env.*`
-([.gitignore:85](../.gitignore#L85)). Confirm without reading the file:
+([.gitignore:86](../.gitignore#L86)). Confirm without reading the file:
 
 ```powershell
 git check-ignore -v .env.agent
