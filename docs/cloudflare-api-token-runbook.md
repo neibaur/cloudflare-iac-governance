@@ -139,10 +139,26 @@ browser and failing from the API client, or the reverse, and the rejection is
 code 9109 — indistinguishable from expiry and from revocation. On a token that
 also carries an expiry date, that is three separate causes behind one error.
 
-For the IPv6 entry, prefer the `/64` prefix over the single address. IPv6
-privacy extensions rotate the host portion of the address regularly while the
-prefix stays stable, so pinning the full address produces intermittent 9109
-failures that look like an ISP change.
+For the IPv6 entry, prefer the `/64` range over the single address. This is a
+value typed into Cloudflare's **Client IP Address Filtering** field — it is not
+part of the token and nothing in this repository changes.
+
+An IPv6 address is eight colon-separated groups. The first four groups are the
+network prefix your ISP assigns to your connection; the last four identify the
+device, and Windows rotates them regularly for privacy. Pinning the full address
+therefore breaks when the device half rotates, even though you never moved.
+Keep the first four groups, replace the rest with `::`, and append `/64`:
+
+| | Example (documentation range, not a real address) |
+| --- | --- |
+| Full address from **Use my IP** | `2001:db8:1234:5678:9a8b:7c6d:5e4f:3a2b` |
+| Enter in Cloudflare | `2001:db8:1234:5678::/64` |
+
+If the address Cloudflare shows already contains `::` within its first four
+groups, zeros were compressed; expand them before counting groups. To see the
+IPv6 address the API client uses, run `curl.exe -s https://api6.ipify.org`.
+The prefix itself can still change if the ISP reassigns it, typically after a
+router restart — the symptom is the same 9109.
 
 Verify the allowlist accepts real traffic before relying on it:
 

@@ -25,13 +25,14 @@ If you are running inside a worktree:
 
 - **Never check out another slot's branch.** Git forbids two worktrees sharing a branch; doing so
   breaks every other slot.
-- Your environment is not provisioned until you run `scripts/bootstrap-worktree.ps1`. Add
-  `-WithSecrets` only if the task spec says secrets are required.
+- Your environment is not provisioned until you run `scripts/bootstrap-worktree.ps1`. Run it with
+  no secret flags unless the task spec names one: `-WithCloudflareToken` (read-only agent token),
+  `-WithTfvars`, or `-WithServiceAccount` (also requires `-IAcceptServiceAccountRisk`).
 - Read **`handoff/README.md`** for the task handoff protocol before starting work.
 - Your task spec is at `../../handoff-live/inbox/<your-slot>-<task-id>.md`.
 - Update `../../handoff-live/status/<your-slot>.md` when you claim, finish, or block on a task.
-- Write a completion note using `handoff/templates/handoff-note.md` into `handoff/notes/` (committed)
-  and copy it to `../../handoff-live/outbox/` (not committed).
+- Write a completion note using `handoff/templates/handoff-note.md` to
+  `../../handoff-live/outbox/<your-slot>-<task-id>.md`. Never commit it to the repository.
 
 ## Validation gate
 
