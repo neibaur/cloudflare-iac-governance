@@ -120,6 +120,41 @@ not accept `-s` and prompts for `Uri`. Use `curl.exe`, including the `.exe`, or
 `Invoke-RestMethod` as shown. If the ISP changes the address, Cloudflare fails
 closed with code 9109. Check the egress IP before assuming the token expired.
 
+### Allowlist both IPv4 and IPv6
+
+A dual-stack machine has an address in both families, and which one a given
+request uses depends on the destination and the route. The two sources disagree
+by design:
+
+| Source | Returns | Family |
+| --- | --- | --- |
+| `api.ipify.org` | `n.n.n.n` | IPv4 |
+| Cloudflare's **Use my IP** button | hex groups separated by `:` | IPv6 |
+
+Both addresses are genuinely yours. Cloudflare's dashboard saw the browser over
+IPv6; ipify answered over IPv4.
+
+**Add both.** Allowlisting only one family leaves the token working from the
+browser and failing from the API client, or the reverse, and the rejection is
+code 9109 — indistinguishable from expiry and from revocation. On a token that
+also carries an expiry date, that is three separate causes behind one error.
+
+For the IPv6 entry, prefer the `/64` prefix over the single address. IPv6
+privacy extensions rotate the host portion of the address regularly while the
+prefix stays stable, so pinning the full address produces intermittent 9109
+failures that look like an ISP change.
+
+Verify the allowlist accepts real traffic before relying on it:
+
+```powershell
+.venv\Scripts\python run_tools.py --verify
+.venv\Scripts\python run_tools.py --audit
+```
+
+`--verify` alone is not sufficient. It confirms the token is active but exercises
+only one endpoint; `--audit` proves the allowlist accepts the zone, settings, and
+bot-management reads the workflow actually performs.
+
 Install the values in the primary clone's gitignored `.env`:
 
 ```dotenv
