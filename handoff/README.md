@@ -28,28 +28,21 @@ a branch, and violating this produces detached HEAD and lock errors across every
 2. **Claim.** The worker reads its inbox file, updates its status file to `IN_PROGRESS` with its
    agent type and start time, and creates a task branch off its slot branch.
 3. **Work.** The worker does the job. Quality gate per `AGENTS.md` before declaring done.
-4. **Record.** The worker writes a completion note to `handoff/notes/<task-id>.md` using
-   `handoff/templates/handoff-note.md` and commits it with the work, so it lands in the PR.
-5. **Signal.** The worker copies the same note to `handoff-live/outbox/<slot>-<task-id>.md` and
-   sets its status file to `DONE` or `BLOCKED`. The live copy is what the next worker reads
-   without needing to pull.
-6. **Release.** The orchestrator archives the inbox file and resets the status file to `IDLE`.
-7. **Prune.** After merging, the orchestrator **deletes** the note from `handoff/notes/` and the
-   copy from `handoff-live/outbox/`. See below.
+4. **Record.** The worker writes a completion note to `handoff-live/outbox/<slot>-<task-id>.md`
+   using `handoff/templates/handoff-note.md`. The note is never committed.
+5. **Signal.** The worker sets its status file to `DONE` or `BLOCKED`.
+6. **Release.** The orchestrator deletes the inbox spec and resets the status file to `IDLE`.
+7. **Prune.** After merging, the orchestrator **deletes** the note from `handoff-live/outbox/`.
 
-## Notes are pruned on merge
+## Completion notes never enter the repository
 
-A completion note exists to carry work from a worker to the orchestrator and to give a reviewer
-context inside the PR. Once the branch is merged, it has done its job and is **deleted**.
-
-The orchestrator prunes as part of merging: remove `handoff/notes/<task-id>.md` and
-`handoff-live/outbox/<slot>-<task-id>.md`. Nothing is lost — the note is in git history, reachable
-with `git log --diff-filter=D --name-only -- handoff/notes/` and readable with `git show`.
+A completion note carries work from a worker to the orchestrator. The orchestrator folds anything a
+reviewer needs into the PR description, and the note is deleted once the work merges.
 
 **Why.** Notes are accurate history that reads exactly like current instruction. They were never
 wrong, so no staleness marker ever applies, and they accumulate without limit. A worker — especially
 a smaller model — cannot reliably tell a six-week-old record of a since-changed decision from a
-standing instruction, and will follow it. An empty `handoff/notes/` directory means every document
+standing instruction, and will follow it. Keeping notes out of the repository means every document
 a worker can reach is one it is supposed to act on.
 
 If a note contains a lesson worth keeping, that lesson does not belong in the note. Move it into

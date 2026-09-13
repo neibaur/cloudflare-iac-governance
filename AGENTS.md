@@ -4,9 +4,7 @@
 
 This repository manages Cloudflare security posture with Terraform and Python automation. Terraform describes zone-level settings, while Python scripts audit compliance, summarize reports, and optionally sync anonymized compliance data for BI reporting.
 
-`main` is the production trunk. Changes merged to `main` should already be validated and safe to run against real infrastructure.
-
-`main` is the only long-lived branch. Work happens on short-lived branches that are merged into `main` through pull requests and deleted after merge.
+`main` is the production trunk and the only long-lived branch. Work happens on short-lived branches that are merged into `main` through pull requests and deleted after merge. Changes merged to `main` should already be validated and safe to run against real infrastructure.
 
 ## AI Agent Rules
 

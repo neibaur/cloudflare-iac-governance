@@ -12,10 +12,9 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
-# NOTE:
-# Pinned to v4 due to use of cloudflare_zone_settings_override.
-# v5 migration requires resource replacement + state migration.
-# version = "~> 4.52"
+# Major Cloudflare provider versions are ignored deliberately. A major bump can
+# rename or replace resources and require state migration, as v4 to v5 did, so
+# it is planned by hand rather than merged from an automated PR.
   - package-ecosystem: "terraform"
     directory: "/terraform"
     schedule:

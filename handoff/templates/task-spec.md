@@ -36,10 +36,11 @@ Links, prior decisions, gotchas. Note anything the worker must NOT assume.
 
 ## Secrets needed
 
-None | CLOUDFLARE_API_TOKEN | GCP_SERVICE_ACCOUNT_KEY | real tfvars
+None | Cloudflare token | tfvars | service account
 
-If any are needed, the worker must run `scripts/bootstrap-worktree.ps1 -WithSecrets` and must not
-display the values.
+Name the bootstrap flag the worker should use: `-WithCloudflareToken` (read-only agent token from
+`.env.agent`), `-WithTfvars`, or `-WithServiceAccount -IAcceptServiceAccountRisk`. Default is none.
+The worker consumes these files and never displays their contents.
 
 ## Handoff target
 
