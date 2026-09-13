@@ -163,9 +163,9 @@ scratchpad test repo) were removed.
    Without it the doc's own example blocks the doc's own commit. `.gitleaks.toml` was deliberately
    not modified — it is outside this task's file ownership.
 
-7. **`AKIAIOSFODNN7EXAMPLE` is useless as a test fixture.** Gitleaks' default config allowlists
-   AWS's published documentation key, so the first block test produced a false pass. Documented in
-   the doc so the next person does not lose the same ten minutes.
+7. **The `AKIA…EXAMPLE` documentation key is useless as a test fixture.** Gitleaks' default
+   config allowlists AWS's published documentation key, so the first block test produced a false
+   pass. Documented in the doc so the next person does not lose the same ten minutes.
 
 ## Risks / follow-ups
 
