@@ -30,6 +30,21 @@ anything.
 Corroborating signal: the failure begins on a scheduled run with no
 corresponding code change, and every earlier run on the same commit was green.
 
+### 1000 vs 9109 — they look alike and mean opposite things
+
+Both surface as an auth failure with a near-identical message, and picking the
+wrong one wastes a token rebuild. Read the numeric `code`, not the text:
+
+| Code | Cloudflare message | What it actually means | What to do |
+| --- | --- | --- | --- |
+| **1000** | `Invalid API Token` | The token was sent to an endpoint that does not own it (a User API Token hitting `/accounts/{id}/tokens/verify`), **or** the secret is wrong/truncated. The token may be perfectly healthy. | Re-check the secret first. If the secret is right, the endpoint is wrong — see the verification section. **Do not** start by suspecting `CLOUDFLARE_ACCOUNT_ID`; this code says nothing about the account. |
+| **9109** | `Invalid access token` | The secret was recognised but the token is expired, revoked, or deleted — or client IP filtering rejected the caller. | Check `status` / `expires_on`, then extend, roll, or recreate. For the agent token, re-check your egress IP before assuming expiry. |
+
+The shorthand: **1000 = wrong door, 9109 = the key no longer works.**
+
+`verify_connection()` distinguishes these in its error text, so the raised
+message names the likely cause instead of blaming the account ID.
+
 ## Verifying the current token
 
 Run from the repository root with the local `.env` populated:
@@ -57,6 +72,31 @@ curl -s "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/to
 `"status"` values: `active` (healthy), `expired` (past `expires_on`), `disabled`
 (manually deactivated). A deleted token returns HTTP 403 / 9109 instead.
 
+**There are two verify endpoints, one per token namespace**, and each rejects the
+other namespace's token with 401 / 1000:
+
+| Endpoint | Accepts |
+| --- | --- |
+| `GET /accounts/{account_id}/tokens/verify` | Account API Tokens only |
+| `GET /user/tokens/verify` | User API Tokens only |
+
+So a 401 / 1000 from the account endpoint does **not** prove the token is bad.
+Before concluding anything, try the other one:
+
+```bash
+curl -s "https://api.cloudflare.com/client/v4/user/tokens/verify" \
+  -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+```
+
+`verify_connection()` does exactly this: account endpoint first, then a fallback
+to the user endpoint on an auth-shaped failure. Only if **both** fail does it
+raise, and the message names both attempts. The expiry contract is unchanged —
+either endpoint can return `success: true` with `status: expired` or `disabled`,
+so always read `status`.
+
+Exception text from this client is redacted: the account ID is replaced with
+`<redacted-account-id>` so it does not land in tracebacks, logs, or CI output.
+
 ## Where the token lives in the dashboard
 
 Cloudflare keeps **two separate token lists**, and a token in one is invisible
@@ -67,9 +107,22 @@ from the other:
 | User API Tokens | dash.cloudflare.com → **My Profile** → API Tokens | Tied to your login; follows you across accounts |
 | Account API Tokens | dash.cloudflare.com → select account → **Manage Account** → API Tokens | Tied to the account; survives membership changes |
 
-Either type works for this project. If the token appears in neither list, it was
-deleted and must be recreated — Cloudflare does not retain deleted tokens, and
-their secrets are unrecoverable regardless.
+**Either type works for this project as of the user-token fallback in
+`verify_connection()`.** Before that change the client verified only against
+`/accounts/{id}/tokens/verify`, so a User API Token failed at the verification
+step with 401 / 1000 — and because `--audit` verifies before reading any zone,
+the whole audit failed even though the token's scopes were correct. If you are
+running an older checkout that lacks
+[`USER_TOKEN_VERIFY_PATH`](../scripts/cloudflare_client.py), you need an **Account
+API Token**; on current `main`, either type works.
+
+Whichever you pick, the token still needs the scopes below and must be scoped to
+the account in `CLOUDFLARE_ACCOUNT_ID` — the fallback fixes verification, not
+permissions.
+
+If the token appears in neither list, it was deleted and must be recreated —
+Cloudflare does not retain deleted tokens, and their secrets are unrecoverable
+regardless.
 
 Also confirm you are browsing the account whose ID is in `CLOUDFLARE_ACCOUNT_ID`.
 With multiple Cloudflare accounts it is easy to search the wrong one; the account
@@ -83,9 +136,9 @@ always; the edit scopes are only exercised when a run is dispatched with
 
 | Permission | Level | Access | Needed by |
 | --- | --- | --- | --- |
-| Zone | Zone | Read | Listing zones — `GET /zones?account.id=` ([cloudflare_client.py:245](../scripts/cloudflare_client.py#L245)) |
-| Zone Settings | Zone | Read | `ssl`, `security_level`, `always_use_https` — `GET /zones/{id}/settings/{id}` ([cloudflare_client.py:165](../scripts/cloudflare_client.py#L165)) |
-| Bot Management | Zone | Read | `bot_fight_mode` — `GET /zones/{id}/bot_management` ([cloudflare_client.py:143](../scripts/cloudflare_client.py#L143)) |
+| Zone | Zone | Read | Listing zones — `GET /zones?account.id=` ([cloudflare_client.py:364](../scripts/cloudflare_client.py#L364)) |
+| Zone Settings | Zone | Read | `ssl`, `security_level`, `always_use_https` — `GET /zones/{id}/settings/{id}` ([cloudflare_client.py:236](../scripts/cloudflare_client.py#L236)) |
+| Bot Management | Zone | Read | `bot_fight_mode` — `GET /zones/{id}/bot_management` ([cloudflare_client.py:214](../scripts/cloudflare_client.py#L214)) |
 | Zone Settings | Zone | Edit | Remediation only — `cloudflare_zone_setting` ([modules/cloudflare_zone_config/main.tf:20](../terraform/modules/cloudflare_zone_config/main.tf#L20)) |
 | Bot Management | Zone | Edit | Remediation only — `cloudflare_bot_management` ([modules/cloudflare_zone_config/main.tf:28](../terraform/modules/cloudflare_zone_config/main.tf#L28)) |
 
@@ -221,7 +274,7 @@ Then provision a worktree:
 
 ```powershell
 cd ..\worktrees\wt-02
-.\scriptsootstrap-worktree.ps1 -WithCloudflareToken
+.\scripts\bootstrap-worktree.ps1 -WithCloudflareToken
 ```
 
 The bootstrap prefers `.env.agent` and warns loudly if it falls back to the unrestricted `.env`.
