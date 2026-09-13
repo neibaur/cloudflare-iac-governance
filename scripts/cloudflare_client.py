@@ -295,8 +295,25 @@ class CloudflareAuditor:
         try:
             return self._request(self._zones_path(1))
         except CloudflareAPIError as exc:
-            raise CloudflareAPIError(
-                "Unable to list zones. Confirm the token includes Zone:Read permissions."
+            if TOKEN_REVOKED_CODE in exc.error_codes:
+                message = (
+                    f"Unable to list zones. Cloudflare error {TOKEN_REVOKED_CODE} means the "
+                    "token is expired, revoked, or deleted, or its IP allowlist blocked this "
+                    "request. GitHub-hosted runners have no stable egress IP, so an IP-filtered "
+                    "token fails here."
+                )
+            elif TOKEN_INVALID_CODE in exc.error_codes:
+                message = (
+                    f"Unable to list zones. Cloudflare error {TOKEN_INVALID_CODE} means the "
+                    "token is invalid or the verify endpoint does not match the token type."
+                )
+            else:
+                message = "Unable to list zones. Confirm the token includes Zone:Read permissions."
+
+            raise self._error(
+                message,
+                status_code=exc.status_code,
+                error_codes=exc.error_codes,
             ) from exc
 
     def _list_zones(self) -> list[dict[str, Any]]:

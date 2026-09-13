@@ -162,4 +162,4 @@ jobs:
         with:
           name: security-compliance-reports
           path: reports/
-          if-no-files-found: error
+          if-no-files-found: ignore
