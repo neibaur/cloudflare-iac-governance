@@ -35,8 +35,14 @@ def test_verify_connection_reports_invalid_token_helpfully(mocker):
     )
     auditor = CloudflareAuditor(api_token="bad-token", account_id="test-account-id")
 
-    with pytest.raises(CloudflareAPIError, match="CLOUDFLARE_ACCOUNT_ID"):
+    with pytest.raises(CloudflareAPIError) as excinfo:
         auditor.verify_connection()
+
+    message = str(excinfo.value)
+    # The old message blamed CLOUDFLARE_ACCOUNT_ID, which sent readers down the wrong path.
+    assert "CLOUDFLARE_ACCOUNT_ID" not in message
+    assert "test-account-id" not in message
+    assert "error 1000" in message
 
 
 def test_get_zone_security_settings_parses_successful_response(
