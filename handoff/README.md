@@ -31,7 +31,7 @@ a branch, and violating this produces detached HEAD and lock errors across every
 4. **Record.** The worker writes a completion note to `handoff-live/outbox/<slot>-<task-id>.md`
    using `handoff/templates/handoff-note.md`. The note is never committed.
 5. **Signal.** The worker sets its status file to `DONE` or `BLOCKED`.
-6. **Release.** The orchestrator archives the inbox file and resets the status file to `IDLE`.
+6. **Release.** The orchestrator deletes the inbox spec and resets the status file to `IDLE`.
 7. **Prune.** After merging, the orchestrator **deletes** the note from `handoff-live/outbox/`.
 
 ## Completion notes never enter the repository
