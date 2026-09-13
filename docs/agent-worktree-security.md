@@ -121,16 +121,28 @@ refuses unless you pass `-Force`.
 Use an obviously fake credential. Never test with a real one — a test commit that lands anyway is
 a real leak.
 
+This doc deliberately contains no literal key: the recipe generates one at run time. A real
+`AKIA` + 16-character string written into a tracked file would be flagged by `detect-secrets` and
+would then have to live in `.secrets.baseline` forever, training readers to ignore baseline churn.
+
 ```bash
-printf 'aws_access_key_id = "AKIAQYLPMN5HZ3TX4RWD"\n' > scratch-leak.txt   # gitleaks:allow
+# Generates AKIA followed by 16 random uppercase alphanumerics - the shape gitleaks matches.
+key="AKIA$(LC_ALL=C tr -dc 'A-Z0-9' < /dev/urandom | head -c 16)"
+printf 'aws_access_key_id = "%s"\n' "$key" > scratch-leak.txt
 git add scratch-leak.txt
 git commit -m "should be blocked"     # expect: COMMIT BLOCKED, exit 1
-git reset scratch-leak.txt && rm scratch-leak.txt
+git reset scratch-leak.txt && rm scratch-leak.txt && unset key
 ```
 
-Gitleaks' default config allowlists AWS's published documentation key `AKIAIOSFODNN7EXAMPLE`, so
-that particular string will **not** trigger a finding. Use some other fake `AKIA` plus 16
-characters, as above.
+If you would rather type the value by hand, any `AKIA` followed by 16 uppercase letters or digits
+of your own invention works — with one exception:
+
+> **Do not test with AWS's published documentation key.** That is the well-known `AKIA…EXAMPLE`
+> string that appears throughout AWS's own docs and SDK samples: it begins `AKIAIOSF…` and ends
+> `…EXAMPLE`. Gitleaks' default config allowlists it on purpose, so it produces a **false pass** —
+> the commit succeeds, and you conclude the hook is broken when it is in fact working correctly.
+> Expect to lose an hour to that if you skip this paragraph. Any *other* fake `AKIA` value is
+> flagged normally.
 
 You can also exercise the hook without installing it, which is the right move while other agents
 are working:
