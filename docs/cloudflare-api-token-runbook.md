@@ -15,7 +15,7 @@ different credentials: do not reuse one token in another role.
 The CI and local operator tokens can audit and remediate. The agent token can
 only audit. `Zone:Zone` is **Read on every token, never Edit**: this repository
 only lists zones with `GET /zones?account.id=`
-([cloudflare_client.py:364](../scripts/cloudflare_client.py#L364)). Zone:Edit
+([cloudflare_client.py:381](../scripts/cloudflare_client.py#L381)). Zone:Edit
 would permit zone deletion, a capability this repository never exercises.
 
 Cloudflare Edit implies Read. Consequently, Zone Settings:Edit and Bot
@@ -52,7 +52,7 @@ prefer a User token. Both still must be scoped to the account in
 The client supports both namespaces. `verify_connection()` first calls
 `/accounts/{id}/tokens/verify`, then falls back to `/user/tokens/verify` after
 an authentication-shaped failure
-([fallback implementation](../scripts/cloudflare_client.py#L81)). A valid User
+([fallback implementation](../scripts/cloudflare_client.py#L89)). A valid User
 token therefore returns HTTP 401 / code 1000 at the first endpoint before
 succeeding at the second. Do not rebuild it merely because the wrong namespace
 rejected it.
