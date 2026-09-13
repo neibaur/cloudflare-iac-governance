@@ -75,6 +75,14 @@ terraform -chdir=terraform validate
 terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 ```
 
+The mock-value plan runs only in CI or a worktree checkout that has no Terraform state. Before
+running it, check for `terraform/terraform.tfstate*`. If any matching file exists, skip the plan
+and report that mock inputs must not be planned against real state. Do not move, edit, or remove
+state to make the check pass.
+
+Report every validation outcome honestly. If a check fails, include the relevant output and do
+not describe partial work as complete.
+
 Use `detect-secrets` locally when changing files that could contain sensitive values:
 
 ```powershell
@@ -99,6 +107,27 @@ detect-secrets audit .secrets.baseline
 - Use placeholders in documentation and examples.
 - Keep `.secrets.baseline` for local detect-secrets checks.
 - Treat Gitleaks failures in CI as release-blocking until reviewed and remediated.
+
+## Multi-Agent Worktrees
+
+Codex, Claude, Gemini, and Copilot can work in parallel across five worktrees at
+`../../worktrees/wt-01` through `wt-05`. Each slot is pinned to its matching `agent/wt-0X`
+branch. A worker never checks out another slot's branch because Git cannot attach one branch to
+multiple worktrees safely.
+
+Before starting work in a slot:
+
+- Read `handoff/README.md` and the assigned task spec at
+  `../../handoff-live/inbox/<your-slot>-<task-id>.md`.
+- Run `scripts/bootstrap-worktree.ps1`. Use no secret flags unless the task spec names one. The
+  available flags are `-WithCloudflareToken`, `-WithTfvars`, and `-WithServiceAccount`; the last
+  also requires `-IAcceptServiceAccountRisk`.
+- Update `../../handoff-live/status/<your-slot>.md` when claiming, completing, or blocking a task.
+- Write the completion note from `handoff/templates/handoff-note.md` to
+  `../../handoff-live/outbox/<your-slot>-<task-id>.md`. Never commit the note.
+
+The handoff protocol defines branch creation, status values, credential brokering, and the full
+worker lifecycle.
 
 ## Definition Of Done
 
