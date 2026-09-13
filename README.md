@@ -181,6 +181,12 @@ runs:
 - `GCP_SERVICE_ACCOUNT_KEY`
 - `GOOGLE_SHEET_ID`
 
+`CLOUDFLARE_API_TOKEN` expires if it was created with a TTL, which fails the
+weekly scheduled audit with a misleading `Zone:Read` message. See
+[docs/cloudflare-api-token-runbook.md](docs/cloudflare-api-token-runbook.md) for
+the required scopes, how to diagnose an expired token, and how to create a
+replacement.
+
 ### Generating REAL_TFVARS from Cloudflare Zones
 
 Use the same local `.env` file for all Cloudflare operations, including
