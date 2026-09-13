@@ -263,15 +263,14 @@ class CloudflareAuditor:
 
         return result
 
-    @staticmethod
-    def _setting_value(setting: dict[str, Any], setting_id: str) -> Any:
+    def _setting_value(self, setting: dict[str, Any], setting_id: str) -> Any:
         if setting.get("id") != setting_id:
-            raise CloudflareAPIError(
+            raise self._error(
                 f"Expected Cloudflare setting '{setting_id}', got '{setting.get('id')}'."
             )
 
         if "value" not in setting:
-            raise CloudflareAPIError(f"Cloudflare setting '{setting_id}' did not include a value.")
+            raise self._error(f"Cloudflare setting '{setting_id}' did not include a value.")
 
         return setting["value"]
 

@@ -9,6 +9,7 @@ on:
       - main
   schedule:
     - cron: "17 8 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read

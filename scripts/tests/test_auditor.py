@@ -147,12 +147,16 @@ def test_get_zone_setting_rejects_missing_result(mocker, cloudflare_fixture_data
 
 def test_setting_value_rejects_unexpected_setting_id():
     with pytest.raises(CloudflareAPIError, match="Expected Cloudflare setting"):
-        CloudflareAuditor._setting_value({"id": "tls_1_3", "value": "on"}, "ssl")
+        CloudflareAuditor("scoped-test-token", "test-account-id")._setting_value(
+            {"id": "tls_1_3", "value": "on"}, "ssl"
+        )
 
 
 def test_setting_value_rejects_missing_value():
     with pytest.raises(CloudflareAPIError, match="did not include a value"):
-        CloudflareAuditor._setting_value({"id": "ssl"}, "ssl")
+        CloudflareAuditor("scoped-test-token", "test-account-id")._setting_value(
+            {"id": "ssl"}, "ssl"
+        )
 
 
 def test_request_returns_json_object(respx_mock):
@@ -173,6 +177,25 @@ def test_request_returns_json_object(respx_mock):
     assert request.headers["Authorization"] == "Bearer scoped-test-token"
     assert request.headers["Content-Type"] == "application/json"
     assert auditor._client.timeout == httpx.Timeout(30)
+
+
+def test_default_base_url_keeps_client_v4_prefix(respx_mock):
+    zones = respx_mock.get("https://api.cloudflare.com/client/v4/zones").mock(
+        return_value=httpx.Response(200, json={"success": True, "result": []})
+    )
+    verify = respx_mock.get("https://api.cloudflare.com/client/v4/user/tokens/verify").mock(
+        return_value=httpx.Response(200, json={"success": True, "result": {"status": "active"}})
+    )
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
+
+    auditor._request(auditor._zones_path(1))
+    auditor._request("/user/tokens/verify")
+
+    assert zones.call_count == 1
+    assert verify.call_count == 1
+    assert str(zones.calls.last.request.url).startswith(
+        "https://api.cloudflare.com/client/v4/zones?"
+    )
 
 
 @pytest.mark.parametrize("status_code", [403, 404])
@@ -464,6 +487,7 @@ def test_fixture_audit_reuses_one_client_and_keeps_six_requests(mocker):
         lambda auditor: auditor._zones_from_payload(
             {"success": False, "errors": ["fixture-account"]}
         ),
+        lambda auditor: auditor._setting_value({"id": "fixture-account", "value": "on"}, "ssl"),
     ],
 )
 def test_payload_validation_paths_redact_account_id(mocker, operation):

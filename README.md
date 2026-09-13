@@ -51,12 +51,12 @@ dataset to the `Cloudflare_Compliance_Main` Google Sheet for BI dashboards.
 | Pull request | Yes | No | No | No | Never |
 | Push to `main` | Yes | Yes | Yes | No | Never |
 | Weekly schedule | Yes (`Quality` workflow) | Yes | Yes | Yes, automatically | Never |
-| Manual dispatch | Yes | Yes | Yes | Only with `sync_to_sheets=Y` | Only with `run_remediation=Y`, `FIX_DETECTED_GAPS=Y`, and detected gaps |
+| Manual dispatch | Run the `Quality` workflow manually; remediation code on `main` has already passed it | Yes | Yes | Only with `sync_to_sheets=Y` | Only from `main`, with `run_remediation=Y`, `FIX_DETECTED_GAPS=Y`, and detected gaps |
 
 ## Safety & Circuit Breakers
 
 Pushes to `main` run audit and reporting only. Remediation is manual-only: start
-the workflow with `workflow_dispatch`, set `run_remediation=Y`, and keep the
+the workflow with `workflow_dispatch` on `main`, set `run_remediation=Y`, and keep the
 repository-level GitHub Variable `FIX_DETECTED_GAPS=Y`.
 
 When all remediation gates are satisfied, the workflow materializes the private
@@ -150,7 +150,8 @@ audits, or Google Sheets sync. State-aware audit and report upload run from the
 Terraform CI workflow on `main`, by weekly schedule, or by manual dispatch.
 Google Sheets sync runs automatically on the weekly schedule, and from manual
 dispatch only with `sync_to_sheets=Y`. Weekly schedule runs never remediate.
-Manual remediation also requires `run_remediation=Y`, the repository-level
+Manual remediation runs only from `main`, which is protected by the required `quality` check. It
+also requires `run_remediation=Y`, the repository-level
 GitHub Variable `FIX_DETECTED_GAPS=Y`, and detected compliance gaps.
 
 Never edit Terraform state files manually. Real `.tfvars` content must stay in
