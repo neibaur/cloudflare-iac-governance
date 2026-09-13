@@ -125,8 +125,9 @@ Before starting work in a slot:
 - Update `../../handoff-live/status/<your-slot>.md` when claiming, completing, or blocking a task.
 - Write the completion note from `handoff/templates/handoff-note.md` to
   `../../handoff-live/outbox/<your-slot>-<task-id>.md`. Never commit the note.
-- Commit to a `task/<task-id>` branch and push it. Workers never open, update, or merge pull
-  requests; the orchestrator reviews pushed branches and owns every pull request to `main`.
+- Commit to a local `task/<task-id>` branch. Workers never push branches and never open, update,
+  or merge pull requests. Worktrees share one repository, so the orchestrator reads the local
+  branch directly and owns every push and pull request to `main`.
 
 The handoff protocol defines branch creation, status values, credential brokering, and the full
 worker lifecycle.

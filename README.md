@@ -50,7 +50,7 @@ dataset to the `Cloudflare_Compliance_Main` Google Sheet for BI dashboards.
 | --- | --- | --- | --- | --- | --- |
 | Pull request | Yes | No | No | No | Never |
 | Push to `main` | Yes | Yes | Yes | No | Never |
-| Weekly schedule | Yes | Yes | Yes | Yes, automatically | Never |
+| Weekly schedule | Yes (`Quality` workflow) | Yes | Yes | Yes, automatically | Never |
 | Manual dispatch | Yes | Yes | Yes | Only with `sync_to_sheets=Y` | Only with `run_remediation=Y`, `FIX_DETECTED_GAPS=Y`, and detected gaps |
 
 ## Safety & Circuit Breakers

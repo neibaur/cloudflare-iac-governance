@@ -7,6 +7,8 @@ on:
   push:
     branches:
       - main
+  schedule:
+    - cron: "17 8 * * 1"
 
 permissions:
   contents: read
@@ -53,6 +55,13 @@ jobs:
 
       - name: Test Terraform
         run: terraform -chdir=terraform test
+
+      - name: Refuse mock plan when Terraform state is present
+        run: |
+          if compgen -G "terraform/*.tfstate*" > /dev/null; then
+            echo "::error::Terraform state found in checkout; mock inputs must never be planned against real state."
+            exit 1
+          fi
 
       - name: Plan Terraform with mock CI values
         run: terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars

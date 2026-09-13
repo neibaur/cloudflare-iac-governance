@@ -168,7 +168,11 @@ def test_request_returns_json_object(respx_mock):
     payload = auditor._request("/accounts/test-account-id/tokens/verify")
 
     assert payload == {"success": True, "result": {"status": "active"}}
-    assert route.called
+    assert route.call_count == 1
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer scoped-test-token"
+    assert request.headers["Content-Type"] == "application/json"
+    assert auditor._client.timeout == httpx.Timeout(30)
 
 
 @pytest.mark.parametrize("status_code", [403, 404])

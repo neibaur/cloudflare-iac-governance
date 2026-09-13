@@ -15,19 +15,18 @@ different credentials: do not reuse one token in another role.
 The CI and local operator tokens can audit and remediate. The agent token can
 only audit. `Zone:Zone` is **Read on every token, never Edit**: this repository
 only lists zones with `GET /zones?account.id=`
-([cloudflare_client.py:381](../scripts/cloudflare_client.py#L381)). Zone:Edit
+(`_zones_path` in [cloudflare_client.py](../scripts/cloudflare_client.py)). Zone:Edit
 would permit zone deletion, a capability this repository never exercises.
 
 Cloudflare Edit implies Read. Consequently, Zone Settings:Edit and Bot
 Management:Edit cover both the read and remediation paths for the CI and local
 operator tokens. Only Zone:Zone needs a separate Read grant. The underlying
 read calls are
-[`GET /zones/{id}/settings/{id}`](../scripts/cloudflare_client.py#L236) and
-[`GET /zones/{id}/bot_management`](../scripts/cloudflare_client.py#L214); the
-Terraform edit resources are
-[`cloudflare_zone_setting`](../terraform/modules/cloudflare_zone_config/main.tf#L20)
-and
-[`cloudflare_bot_management`](../terraform/modules/cloudflare_zone_config/main.tf#L28).
+`GET /zones/{id}/settings/{id}` (`_get_zone_setting`) and
+`GET /zones/{id}/bot_management` (`_get_bot_fight_mode`), both in
+[cloudflare_client.py](../scripts/cloudflare_client.py); the
+Terraform edit resources are `cloudflare_zone_setting` and `cloudflare_bot_management`
+in [the zone config module](../terraform/modules/cloudflare_zone_config/main.tf).
 
 For every token, set **Zone Resources** to `Include` ->
 `All zones from an account` -> the account matching
@@ -52,7 +51,7 @@ prefer a User token. Both still must be scoped to the account in
 The client supports both namespaces. `verify_connection()` first calls
 `/accounts/{id}/tokens/verify`, then falls back to `/user/tokens/verify` after
 an authentication-shaped failure
-([fallback implementation](../scripts/cloudflare_client.py#L89)). A valid User
+(`verify_connection` in [cloudflare_client.py](../scripts/cloudflare_client.py)). A valid User
 token therefore returns HTTP 401 / code 1000 at the first endpoint before
 succeeding at the second. Do not rebuild it merely because the wrong namespace
 rejected it.
@@ -228,7 +227,7 @@ GOOGLE_SHEET_ID=<sheet-id>
 `GOOGLE_SHEET_ID` only addresses the spreadsheet. The credential that opens it
 is `service_account.json`, which must stay out of worktrees. `.env` is ignored
 explicitly and `.env.agent` is covered by `.env.*`
-([.gitignore:86](../.gitignore#L86)). Confirm without reading the file:
+(see the `.env.*` rule in [.gitignore](../.gitignore)). Confirm without reading the file:
 
 ```powershell
 git check-ignore -v .env.agent

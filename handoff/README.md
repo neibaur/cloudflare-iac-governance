@@ -27,13 +27,13 @@ a branch, and violating this produces detached HEAD and lock errors across every
    using `handoff/templates/task-spec.md`, and sets `handoff-live/status/<slot>.md` to `ASSIGNED`.
 2. **Claim.** The worker reads its inbox file, updates its status file to `IN_PROGRESS` with its
    agent type and start time, and creates `task/<task-id>` from `origin/main`.
-3. **Work.** The worker does the job, runs the quality gate per `AGENTS.md`, commits, and pushes
-   `task/<task-id>`. Workers never open, update, or merge pull requests.
+3. **Work.** The worker does the job, runs the quality gate per `AGENTS.md`, and commits to the
+   local `task/<task-id>` branch. Workers never push and never open, update, or merge pull requests.
 4. **Record.** The worker writes a completion note to `handoff-live/outbox/<slot>-<task-id>.md`
    using `handoff/templates/handoff-note.md`. The note is never committed.
 5. **Signal.** The worker sets its status file to `DONE` or `BLOCKED`, then stops.
-6. **Integrate.** The orchestrator reviews the pushed branches, applies any fixes, and opens the
-   pull request to `main`, combining related branches into one pull request when that eases review.
+6. **Integrate.** The orchestrator reviews the local task branches, applies any fixes, pushes, and
+   opens the pull request to `main`, combining related branches into one pull request when that eases review.
 7. **Release.** The orchestrator deletes the inbox spec and resets the status file to `IDLE`.
 8. **Prune.** After merging, the orchestrator **deletes** the note from `handoff-live/outbox/`.
 

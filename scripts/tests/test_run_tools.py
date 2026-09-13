@@ -57,7 +57,11 @@ def test_token_expiry_messages(expires_on, expected, capsys):
         now=datetime(2026, 9, 13, 12, tzinfo=UTC),
     )
 
-    assert capsys.readouterr().err.startswith(expected)
+    stderr = capsys.readouterr().err
+    if expected:
+        assert stderr.startswith(expected)
+    else:
+        assert stderr == ""
 
 
 @pytest.mark.parametrize("action", ["verify", "audit"])
