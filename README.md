@@ -19,6 +19,9 @@ Project operating rules live in [AGENTS.md](AGENTS.md). Pull requests should use
 the [.github/pull_request_template.md](.github/pull_request_template.md), and
 ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
 
+Architecture decisions are recorded in [docs/adr/](docs/adr/README.md). Security
+reports follow [SECURITY.md](SECURITY.md).
+
 ## Architecture
 
 ```mermaid

@@ -388,8 +388,8 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
         }
     ]
     output = capsys.readouterr().out
-    assert "[1/2] checking secure.example..." in output
-    assert "[2/2] checking weak.example..." in output
+    assert "[1/2] checking zone..." in output
+    assert "[2/2] checking zone..." in output
     assert "Domains audited: 2" in output
     assert "Domains deviating from standards: 1" in output
     assert "CSV report: 20260430T120000Z_security_compliance_report.csv" in output

@@ -1,8 +1,4 @@
-# Architecture Decision Record 0005
-
-## Title
-
-Agent Cost and Authority Limits
+# ADR 0005: Agent Cost and Authority Limits
 
 ## Status
 

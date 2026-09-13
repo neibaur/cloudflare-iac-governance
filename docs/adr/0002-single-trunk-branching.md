@@ -1,8 +1,4 @@
-# Architecture Decision Record 0002
-
-## Title
-
-Single-Trunk Branching
+# ADR 0002: Single-Trunk Branching
 
 ## Status
 

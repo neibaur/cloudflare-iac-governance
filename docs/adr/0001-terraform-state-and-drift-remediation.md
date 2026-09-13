@@ -1,4 +1,4 @@
-# Terraform state and guarded drift remediation
+# ADR 0001: Terraform State and Guarded Drift Remediation
 
 ## Status
 
@@ -65,8 +65,8 @@ Pros:
 
 Cons:
 
-- Terraform introduced S3 native lockfiles in Terraform 1.10; the repository currently pins 1.9.8,
-  so adoption requires an upgrade. The 1.10 release is the first release whose S3 backend exposes
+- Terraform introduced S3 native lockfiles in Terraform 1.10. The repository pins Terraform 1.15,
+  which satisfies that minimum. The 1.10 release is the first release whose S3 backend exposes
   this behavior ([Terraform 1.10 release](https://github.com/hashicorp/terraform/releases/tag/v1.10.0),
   [S3 lock configuration](https://developer.hashicorp.com/terraform/language/backend/s3)).
 - Cloudflare's backend example does not currently demonstrate `use_lockfile`, bucket versioning, or
@@ -128,7 +128,7 @@ organization-wide policy library, but not for this narrow action/type/count gate
 ## Recommended decision
 
 Adopt Cloudflare R2 through the S3 backend, contingent on a pre-migration lock acceptance test, and
-upgrade Terraform to at least 1.10. Enable `use_lockfile = true`; configure the documented R2
+keep Terraform at 1.10 or later (the repository pins 1.15). Enable `use_lockfile = true`; configure the documented R2
 endpoint and compatibility flags; provide credentials only through environment variables or
 ephemeral runner files; restrict object permissions to the state key and its `.tflock` companion;
 and enable R2 object versioning if the selected R2 feature supports the required recovery workflow.
@@ -269,8 +269,8 @@ Each phase is one reviewable pull request and must pass the repository quality g
    Terraform loading, Python loading, and parity tests for all six controls. Acceptance: Terraform
    and Python tests consume the same fixture and the audit reports every enforced control. No
    operator action is needed.
-2. **Backend prerequisites and lock proof.** Raise the Terraform minimum and CI version to at least
-   1.10, add partial R2 S3 backend configuration, document recovery, and add a disposable-backend
+2. **Backend prerequisites and lock proof.** Confirm the pinned Terraform version still satisfies the
+   1.10 lockfile minimum, add partial R2 S3 backend configuration, document recovery, and add a disposable-backend
    lock test procedure. Acceptance: two concurrent holders cannot acquire the same test lock, stale
    lock recovery is demonstrated, and no credential appears in configuration or logs. The operator
    creates the R2 bucket, enables the selected recovery/versioning feature, creates scoped backend

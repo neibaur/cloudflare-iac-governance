@@ -182,7 +182,7 @@ class CloudflareAuditor:
 
         sorted_zones = sorted(zones, key=lambda item: cast(str, item["name"]))
         for index, zone in enumerate(sorted_zones, start=1):
-            print(f"[{index}/{len(sorted_zones)}] checking {zone['name']}...", flush=True)
+            print(f"[{index}/{len(sorted_zones)}] checking zone...", flush=True)
             settings = self.get_zone_security_settings(cast(str, zone["id"]))
             deviations = {
                 setting_id: value

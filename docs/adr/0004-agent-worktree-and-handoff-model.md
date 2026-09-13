@@ -1,8 +1,4 @@
-# Architecture Decision Record 0004
-
-## Title
-
-Agent Worktree and Handoff Model
+# ADR 0004: Agent Worktree and Handoff Model
 
 ## Status
 

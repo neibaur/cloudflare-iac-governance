@@ -1,8 +1,4 @@
-# Architecture Decision Record 0003
-
-## Title
-
-Three-Token Cloudflare Credential Model
+# ADR 0003: Three-Token Cloudflare Credential Model
 
 ## Status
 
