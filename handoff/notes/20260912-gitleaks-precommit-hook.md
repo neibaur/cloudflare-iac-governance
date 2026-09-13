@@ -159,9 +159,10 @@ scratchpad test repo) were removed.
    setting resolves to each worktree's own copy. An absolute path would have pinned every worktree
    to the primary clone's hook.
 
-6. **The fake AKIA key in `docs/agent-worktree-security.md` carries an inline `gitleaks:allow`.**
-   Without it the doc's own example blocks the doc's own commit. `.gitleaks.toml` was deliberately
-   not modified — it is outside this task's file ownership.
+6. **Superseded 2026-09-13.** This lesson originally recorded that the doc's fake AKIA key carried
+   an inline `gitleaks:allow` so the doc's own example would not block the doc's own commit. That
+   literal key has since been removed entirely — the doc now generates a random key at run time, so
+   no allowlist comment is needed. See `20260913-secret-fixture-hygiene.md`.
 
 7. **The `AKIA…EXAMPLE` documentation key is useless as a test fixture.** Gitleaks' default
    config allowlists AWS's published documentation key, so the first block test produced a false
