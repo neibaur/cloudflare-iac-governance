@@ -139,26 +139,26 @@ browser and failing from the API client, or the reverse, and the rejection is
 code 9109 — indistinguishable from expiry and from revocation. On a token that
 also carries an expiry date, that is three separate causes behind one error.
 
-For the IPv6 entry, prefer the `/64` range over the single address. This is a
-value typed into Cloudflare's **Client IP Address Filtering** field — it is not
-part of the token and nothing in this repository changes.
+For the IPv6 entry, allowlist the exact address your API client sends from. A
+machine holds several IPv6 addresses at once, and only one of them is used as
+the source of outbound connections. Check which one, and whether it is stable:
 
-An IPv6 address is eight colon-separated groups. The first four groups are the
-network prefix your ISP assigns to your connection; the last four identify the
-device, and Windows rotates them regularly for privacy. Pinning the full address
-therefore breaks when the device half rotates, even though you never moved.
-Keep the first four groups, replace the rest with `::`, and append `/64`:
+```powershell
+$src = .venv\Scripts\python -c "import socket;s=socket.create_connection(('api.cloudflare.com',443));print(s.getsockname()[0]);s.close()"
+Get-NetIPAddress | Where-Object IPAddress -eq $src | Select-Object IPAddress, SuffixOrigin
+```
 
-| | Example (documentation range, not a real address) |
-| --- | --- |
-| Full address from **Use my IP** | `2001:db8:1234:5678:9a8b:7c6d:5e4f:3a2b` |
-| Enter in Cloudflare | `2001:db8:1234:5678::/64` |
+- **`SuffixOrigin` is `Link`** — a stable address. Allowlist it exactly as shown.
+  It does not rotate on a timer.
+- **`SuffixOrigin` is `Random`** — a temporary privacy address, which Windows
+  replaces within about a week. A single-address allowlist will break when it
+  does. Prefer IPv4-only filtering in that case, because Cloudflare's filter
+  field rejected a `/64` range when this was tested.
+- **The output is an IPv4 private address** such as `192.168.x.x` — the client is
+  using IPv4 behind NAT. Use the public address from `api.ipify.org` instead.
 
-If the address Cloudflare shows already contains `::` within its first four
-groups, zeros were compressed; expand them before counting groups. To see the
-IPv6 address the API client uses, run `curl.exe -s https://api6.ipify.org`.
-The prefix itself can still change if the ISP reassigns it, typically after a
-router restart — the symptom is the same 9109.
+Either address changes if the ISP reassigns your prefix, typically after a
+router restart. The symptom is the same 9109.
 
 Verify the allowlist accepts real traffic before relying on it:
 
