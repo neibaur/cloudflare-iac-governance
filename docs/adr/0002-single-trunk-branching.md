@@ -18,7 +18,9 @@ human work also needs short-lived isolation without creating competing productio
 
 `main` is the only long-lived branch. Work uses short-lived branches and enters `main` through
 pull requests. The `main protection` ruleset requires pull requests, linear history, resolved
-review threads, and the required checks `quality`, `CodeQL`, and `Gitleaks history scan`.
+review threads, and the required checks `quality`, `CodeQL`, and `Gitleaks history scan`. `CodeQL`
+is the code-scanning result check that GitHub publishes from the CodeQL workflow's analysis, not
+the name of that workflow's job.
 
 ## Consequences
 

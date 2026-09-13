@@ -16,6 +16,8 @@ Describe the change and why it is needed.
 - [ ] terraform -chdir=terraform fmt -check -recursive
 - [ ] terraform -chdir=terraform init -backend=false
 - [ ] terraform -chdir=terraform validate
+- [ ] terraform -chdir=terraform test
+- [ ] No `terraform/*.tfstate*` present, then terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
 ## Terraform safety checklist
 

@@ -415,8 +415,8 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
         }
     ]
     output = capsys.readouterr().out
-    assert "[1/2] checking zone..." in output
-    assert "[2/2] checking zone..." in output
+    progress_lines = [line for line in output.splitlines() if line.startswith("[")]
+    assert progress_lines == ["[1/2] checking zone...", "[2/2] checking zone..."]
     assert "Domains audited: 2" in output
     assert "Domains deviating from standards: 1" in output
     assert "CSV report: 20260430T120000Z_security_compliance_report.csv" in output

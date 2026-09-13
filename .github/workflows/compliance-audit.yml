@@ -1,0 +1,81 @@
+name: Compliance Audit
+
+# Read-only compliance audit and reporting. This workflow never runs Terraform against real
+# infrastructure: CI has no durable Terraform state, so any apply would start from empty state.
+# State-backed drift detection and guarded correction are designed in
+# docs/adr/0001-terraform-state-and-drift-remediation.md.
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      sync_to_sheets:
+        description: "Sync anonymized compliance reports to Google Sheets"
+        required: true
+        default: "N"
+        type: choice
+        options:
+          - "N"
+          - "Y"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compliance-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.14"
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Run compliance audit
+        run: python run_tools.py --audit
+
+      - name: Report compliance gaps
+        run: |
+          if python scripts/check_compliance_gaps.py; then
+            echo "Compliance gaps: none" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Compliance gaps detected. Review the security-compliance-reports artifact." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Sync compliance reports to Google Sheets
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.sync_to_sheets == 'Y') }}
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+        run: |
+          trap 'rm -f service_account.json' EXIT
+          echo "$GCP_SERVICE_ACCOUNT_KEY" > service_account.json
+          python scripts/aggregate_to_sheets.py
+
+      - name: Upload compliance reports
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: security-compliance-reports
+          path: reports/
+          if-no-files-found: ignore

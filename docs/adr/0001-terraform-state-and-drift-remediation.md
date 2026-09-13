@@ -10,9 +10,10 @@ Proposed
 
 ## Context
 
-Terraform currently initializes with `-backend=false`. CI therefore has no durable state, and the
-remediation path evaluates real inputs from empty state and discards any state it creates. That is
-not a safe basis for managing existing infrastructure. The configuration declares five
+Terraform in CI initializes with `-backend=false` and has no durable state. An apply from that
+position would evaluate the real inventory from empty state and discard whatever state it created,
+which is not a safe basis for managing existing infrastructure, so no workflow runs `terraform apply`
+until this design is implemented. The configuration declares five
 `cloudflare_zone_setting` instances and one `cloudflare_bot_management` instance for each zone. At
 roughly 96 zones, the intended state contains about 576 managed resources. The Python audit checks
 only four of those six controls, and its standard is separate from the Terraform defaults.

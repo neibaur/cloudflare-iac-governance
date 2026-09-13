@@ -64,9 +64,9 @@ def test_token_expiry_messages(expires_on, expected, capsys):
         assert stderr == ""
 
 
-@pytest.mark.parametrize("action", ["verify", "audit"])
+@pytest.mark.parametrize("action", ["verify", "list", "audit"])
 def test_main_checks_expiry_and_closes_client(mocker, action):
-    args = mocker.Mock(verify=action == "verify", list=False, audit=action == "audit")
+    args = mocker.Mock(verify=action == "verify", list=action == "list", audit=action == "audit")
     mocker.patch.object(run_tools, "parse_args", return_value=args)
     mocker.patch.object(run_tools, "read_cloudflare_env", return_value=("token", "account"))
     auditor_type = mocker.patch.object(run_tools, "CloudflareAuditor")

@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   analyze:
-    name: Analyze Python
+    name: Analyze
     runs-on: ubuntu-latest
 
     steps:

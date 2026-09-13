@@ -32,11 +32,20 @@ These files and folders are generally safe for agents to edit when the change ma
 - `.editorconfig`
 - `.gitleaks.toml`
 - `.github/workflows/*.yml`
+- `.github/pull_request_template.md`
+- `.github/copilot-instructions.md`
+- `CLAUDE.md`
+- `GEMINI.md`
+- `SECURITY.md`
+- `docs/**/*.md`
+- `handoff/**/*.md`
 - `.github/dependabot.yml`
 - `pyproject.toml`
 - `requirements.txt`
 - `requirements-dev.txt`
+- `run_tools.py`
 - `scripts/**/*.py`
+- `scripts/**/*.ps1`
 - `scripts/tests/**/*.py`
 - `terraform/**/*.tf`
 - `terraform/tests/**/*.hcl`
@@ -72,6 +81,7 @@ python -m venv .venv
 terraform -chdir=terraform fmt -check -recursive
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
+terraform -chdir=terraform test
 terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 ```
 
@@ -139,5 +149,5 @@ A change is complete when:
 - Python quality checks pass.
 - Terraform formatting, validation, and safe-input planning pass.
 - No protected files, generated reports, Terraform state, real `.tfvars`, `.env`, or service account files are committed.
-- CI workflows remain purpose-specific: fast quality checks for PRs, state-aware Terraform audit/remediation only with explicit gating.
+- CI workflows remain purpose-specific: the `Quality` workflow validates changes, the `Compliance Audit` workflow runs the read-only audit, and no workflow runs `terraform apply` until the remote-state design in ADR 0001 is implemented.
 - Documentation reflects any changed commands, secrets, or operational expectations.

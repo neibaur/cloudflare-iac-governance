@@ -58,7 +58,7 @@ rejected it.
 
 ## Set up the CI token
 
-Use this credential for scheduled and manually dispatched `Terraform CI` runs.
+Use this credential for scheduled and manually dispatched `Compliance Audit` runs.
 
 1. In either dashboard token list, choose **Create Token** -> **Create Custom
    Token** and give it a CI-specific name.
@@ -77,12 +77,11 @@ Use this credential for scheduled and manually dispatched `Terraform CI` runs.
    gh secret set CLOUDFLARE_API_TOKEN
    ```
 
-7. Verify by dispatching `Terraform CI` with both `workflow_dispatch` inputs
-   left at `N`. The run should pass **Run compliance audit** without entering
-   remediation.
+7. Verify by dispatching `Compliance Audit` with `sync_to_sheets` left at `N`.
+   The run should pass **Run compliance audit**.
 
 If this token expires, is revoked, is deleted, or is rejected, scheduled and
-dispatched `Terraform CI` fails at **Run compliance audit**. Local operator and
+dispatched `Compliance Audit` fails at **Run compliance audit**. Local operator and
 agent audits are unaffected because they use separate credentials.
 
 When rolling the CI token, update the GitHub Secret
@@ -92,8 +91,8 @@ expiry, the secret remains unchanged.
 ## Set up the local operator token
 
 Use this credential for trusted, attended commands from the primary clone. It
-is edit-capable because the operator may deliberately run the guarded
-remediation path.
+is edit-capable because the operator performs attended changes that agents and
+the read-only audit never make.
 
 1. Create a custom User or Account API Token with a local-operator-specific
    name.
@@ -284,7 +283,7 @@ Use the failure location to identify which credential to inspect:
 
 | Failure | Token to inspect | Other paths affected? |
 | --- | --- | --- |
-| `Terraform CI` fails at **Run compliance audit** | CI GitHub Secret | No |
+| `Compliance Audit` fails at **Run compliance audit** | CI GitHub Secret | No |
 | Local `python run_tools.py --verify` or `--audit` fails | Local `.env` | No |
 | A provisioned worktree cannot verify or audit | Primary clone `.env.agent` | No |
 
@@ -365,4 +364,4 @@ storage.
 ## Related
 
 - [Agent worktree security](agent-worktree-security.md)
-- [Terraform CI workflow](../.github/workflows/terraform-ci.yml)
+- [Compliance Audit workflow](../.github/workflows/compliance-audit.yml)

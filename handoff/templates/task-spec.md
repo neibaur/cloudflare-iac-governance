@@ -27,6 +27,7 @@ Explicitly out of scope:
 - [ ] Python quality gate passes: `.venv\Scripts\python scripts/run_all_checks.py`
 - [ ] `terraform -chdir=terraform fmt -check -recursive` passes (if Terraform touched)
 - [ ] `terraform -chdir=terraform validate` passes (if Terraform touched)
+- [ ] `terraform -chdir=terraform test` passes (if Terraform touched)
 - [ ] No protected files, reports, state, real tfvars, .env, or service account material committed
 - [ ]
 

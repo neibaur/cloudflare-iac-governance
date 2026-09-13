@@ -7,10 +7,10 @@ parallel git worktrees. This folder is the durable, git-tracked half of the hand
 
 | Location | Tracked? | Purpose |
 | --- | --- | --- |
-| `handoff/` (this folder) | Yes | Task specs and completion notes that belong in history and show up in PRs. |
-| `../../handoff-live/` (outside the repo) | No | Live coordination across worktrees. Instantly visible to every slot, no commit required. |
+| `handoff/` (this folder) | Yes | The protocol and the templates for task specs, completion notes, and broker requests. |
+| `../../handoff-live/` (outside the repo) | No | Task specs, status files, and completion notes. Instantly visible to every slot, never committed. |
 
-The repo folder is the record. The live folder is the conversation.
+The repo folder defines how work is handed off. The live folder holds the handoffs themselves.
 
 ## Worktree slots
 

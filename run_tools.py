@@ -80,9 +80,10 @@ def main() -> int:
     args = parse_args()
     token, account_id = read_cloudflare_env()
     with CloudflareAuditor(token, account_id) as auditor:
+        verification = auditor.verify_connection()
+        warn_if_token_expires_soon(verification)
+
         if args.verify:
-            verification = auditor.verify_connection()
-            warn_if_token_expires_soon(verification)
             print(verification)
             return 0
 
@@ -91,8 +92,6 @@ def main() -> int:
             return 0
 
         if args.audit:
-            verification = auditor.verify_connection()
-            warn_if_token_expires_soon(verification)
             auditor.audit_security_posture(REPORT_DIR)
             return 0
 
