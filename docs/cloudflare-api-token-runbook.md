@@ -365,6 +365,5 @@ storage.
 
 ## Related
 
-- [Cloudflare provider v5 migration](cloudflare-provider-v5-migration.md)
 - [Agent worktree security](agent-worktree-security.md)
 - [Terraform CI workflow](../.github/workflows/terraform-ci.yml)

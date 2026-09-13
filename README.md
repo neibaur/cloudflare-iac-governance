@@ -1,5 +1,6 @@
-# cloudflare_IaC
-Cloudflare Infrastructure Management (IaC) for API and Terraform bulk retrieval and update of multiple domain security settings
+# cloudflare-iac-governance
+
+Terraform and Python automation for governing, auditing, and reporting Cloudflare zone security posture.
 
 ## Branch And PR Expectations
 
@@ -8,19 +9,15 @@ branches that target `main` through pull requests and are deleted after merge.
 Pull requests must pass the lightweight quality workflow and avoid generated
 reports, local secrets, Terraform state, or real infrastructure values.
 
-PR validation is intentionally non-destructive. It runs Python quality checks,
-Terraform formatting, and Terraform validation. Terraform plans may use mock
-values from `terraform/ci.auto.tfvars` only in a safe mock-state/no-real-state
-context.
+PR validation is intentionally non-destructive. It runs the Python quality
+gate, Terraform formatting and validation, and a mock-value Terraform plan
+using `terraform/ci.auto.tfvars` in a safe mock-state/no-real-state context.
 
 ## Governance
 
 Project operating rules live in [AGENTS.md](AGENTS.md). Pull requests should use
 the [.github/pull_request_template.md](.github/pull_request_template.md), and
 ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
-
-Cloudflare provider v5 migration guidance is tracked separately in
-[docs/cloudflare-provider-v5-migration.md](docs/cloudflare-provider-v5-migration.md).
 
 ## Architecture
 
@@ -155,11 +152,6 @@ GitHub Variable `FIX_DETECTED_GAPS=Y`, and detected compliance gaps.
 
 Never edit Terraform state files manually. Real `.tfvars` content must stay in
 local ignored files or GitHub Secrets.
-
-Cloudflare provider v5 migration is intentionally out of scope for the hygiene
-baseline. It will require replacing `cloudflare_zone_settings_override` with
-per-setting `cloudflare_zone_setting` resources and handling Terraform state
-migration separately.
 
 ## GitHub Actions Secrets
 
