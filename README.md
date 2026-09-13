@@ -10,7 +10,7 @@ Pull requests must pass the lightweight quality workflow and avoid generated
 reports, local secrets, Terraform state, or real infrastructure values.
 
 PR validation is intentionally non-destructive. It runs the Python quality
-gate, Terraform formatting and validation, and a mock-value Terraform plan
+gate, Terraform formatting, validation, and tests, and a mock-value Terraform plan
 using `terraform/ci.auto.tfvars` in a safe mock-state/no-real-state context.
 
 ## Governance
@@ -29,7 +29,7 @@ flowchart LR
     pr[Pull request] --> quality[Quality workflow]
     quality --> checks[Python gate, Terraform fmt / validate / test, mock plan]
     main[Push to main or weekly schedule] --> audit[Compliance Audit workflow]
-    audit --> csv[Compliance CSV artifact]
+    audit --> summary[Counts-only log and step summary]
     audit --> aggregate[Anonymized aggregation]
     aggregate --> sheets[Google Sheets Main Dataset]
     sheets --> looker[Looker Studio]
@@ -37,18 +37,18 @@ flowchart LR
 
 The `Quality` workflow validates Python and Terraform on every pull request, on
 every push to `main`, weekly, and on manual dispatch. The `Compliance Audit`
-workflow runs the read-only Cloudflare audit, archives CSV reports, and syncs a
+workflow runs the read-only Cloudflare audit on `main`, reports counts only, and syncs a
 privacy-safe aggregate dataset to the `Cloudflare_Compliance_Main` Google Sheet
 for BI dashboards.
 
 ## Workflow Behavior
 
-| Trigger | Quality checks | Read-only Cloudflare audit | Compliance report artifact | Google Sheets sync | Terraform apply |
+| Trigger | Quality checks | Read-only Cloudflare audit | Public audit output | Google Sheets sync | Terraform apply |
 | --- | --- | --- | --- | --- | --- |
 | Pull request | Yes | No | No | No | Never |
-| Push to `main` | Yes | Yes | Yes | No | Never |
-| Weekly schedule | Yes | Yes | Yes | Yes, automatically | Never |
-| Manual dispatch | Yes (`Quality` workflow) | Yes (`Compliance Audit` workflow) | Yes | Only with `sync_to_sheets=Y` | Never |
+| Push to `main` | Yes | Yes | Counts only | No | Never |
+| Weekly schedule | Yes | Yes | Counts only | Yes, automatically | Never |
+| Manual dispatch | Yes (`Quality` workflow) | From `main` only (`Compliance Audit` workflow) | Counts only | Only with `sync_to_sheets=Y` | Never |
 
 ## Safety
 
@@ -193,12 +193,11 @@ values.
 Do not commit `.env`, service account JSON files, raw Cloudflare exports, real
 `.tfvars`, Terraform state, or generated reports.
 
-After a GitHub Actions run, open the workflow run in the GitHub UI and download
-the `security-compliance-reports` artifact from the Artifacts section. It
-contains the generated `reports/` directory and compliance CSVs from that run.
-
-Generated reports are artifacts, not source files. Local copies under `reports/`
-are ignored by Git.
+CI audit runs publish counts only. The workflow log omits domain names, and no
+report is uploaded as an artifact, because this repository is public and the
+CSV contains domain names and zone IDs. For per-domain results, run
+`python run_tools.py --audit` locally; reports under `reports/` are ignored by
+Git.
 
 ## Data Privacy
 

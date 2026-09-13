@@ -8,19 +8,21 @@ different credentials: do not reuse one token in another role.
 
 | Token | Stored in | Permissions | Expiry | Client IP filter |
 | --- | --- | --- | --- | --- |
-| **CI** | GitHub Secret `CLOUDFLARE_API_TOKEN` | Zone:Read, Zone Settings:Edit, Bot Management:Edit | None | None |
+| **CI** | GitHub Secret `CLOUDFLARE_API_TOKEN` | Zone:Read, Zone Settings:Read, Bot Management:Read | None | None |
 | **Local operator** | `.env` | Zone:Read, Zone Settings:Edit, Bot Management:Edit | Set one according to operator policy | Operator egress IP |
 | **Agent worktrees** | `.env.agent` in the primary clone | Zone:Read, Zone Settings:Read, Bot Management:Read | Short, for example 30 days | Optional |
 
-The CI and local operator tokens can audit and remediate. The agent token can
-only audit. `Zone:Zone` is **Read on every token, never Edit**: this repository
+The CI and agent tokens can only audit. The local operator token can also make
+attended changes. No workflow changes infrastructure, so CI never holds an edit
+token; a separate, environment-gated apply token arrives with ADR 0001.
+`Zone:Zone` is **Read on every token, never Edit**: this repository
 only lists zones with `GET /zones?account.id=`
 (`_zones_path` in [cloudflare_client.py](../scripts/cloudflare_client.py)). Zone:Edit
 would permit zone deletion, a capability this repository never exercises.
 
 Cloudflare Edit implies Read. Consequently, Zone Settings:Edit and Bot
-Management:Edit cover both the read and remediation paths for the CI and local
-operator tokens. Only Zone:Zone needs a separate Read grant. The underlying
+Management:Edit cover both reading and changing settings for the local operator
+token. Only Zone:Zone needs a separate Read grant. The underlying
 read calls are
 `GET /zones/{id}/settings/{id}` (`_get_zone_setting`) and
 `GET /zones/{id}/bot_management` (`_get_bot_fight_mode`), both in
@@ -62,8 +64,8 @@ Use this credential for scheduled and manually dispatched `Compliance Audit` run
 
 1. In either dashboard token list, choose **Create Token** -> **Create Custom
    Token** and give it a CI-specific name.
-2. Grant exactly Zone:Read, Zone Settings:Edit, and Bot Management:Edit. Do not
-   grant Zone:Edit.
+2. Grant exactly Zone:Read, Zone Settings:Read, and Bot Management:Read. Do not
+   grant any Edit permission: the `Compliance Audit` workflow only reads.
 3. Include all zones from the account.
 4. Leave the expiry unset. A weekly job can fail unnoticed; an expired CI token
    previously left five consecutive scheduled runs failing.

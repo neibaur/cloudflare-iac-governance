@@ -17,6 +17,7 @@ pythonpath = ["."]
 cache_dir = ".pytest_cache"
 addopts = [
   "--cov=scripts",
+  "--cov=run_tools",
   "--cov-report=term-missing",
   "--cov-fail-under=85",
 ]

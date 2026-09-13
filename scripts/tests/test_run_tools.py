@@ -66,7 +66,12 @@ def test_token_expiry_messages(expires_on, expected, capsys):
 
 @pytest.mark.parametrize("action", ["verify", "list", "audit"])
 def test_main_checks_expiry_and_closes_client(mocker, action):
-    args = mocker.Mock(verify=action == "verify", list=action == "list", audit=action == "audit")
+    args = mocker.Mock(
+        verify=action == "verify",
+        list=action == "list",
+        audit=action == "audit",
+        redact_identities=True,
+    )
     mocker.patch.object(run_tools, "parse_args", return_value=args)
     mocker.patch.object(run_tools, "read_cloudflare_env", return_value=("token", "account"))
     auditor_type = mocker.patch.object(run_tools, "CloudflareAuditor")
@@ -79,3 +84,13 @@ def test_main_checks_expiry_and_closes_client(mocker, action):
 
     warning.assert_called_once_with(verification)
     auditor_type.return_value.__exit__.assert_called_once()
+    if action == "list":
+        auditor.list_all_zones.assert_called_once_with()
+    else:
+        auditor.list_all_zones.assert_not_called()
+    if action == "audit":
+        auditor.audit_security_posture.assert_called_once_with(
+            run_tools.REPORT_DIR, show_identities=False
+        )
+    else:
+        auditor.audit_security_posture.assert_not_called()

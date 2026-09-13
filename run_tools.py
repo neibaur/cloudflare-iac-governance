@@ -73,6 +73,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Audit Cloudflare zone security settings.",
     )
+    parser.add_argument(
+        "--redact-identities",
+        action="store_true",
+        help="Print audit counts only, without domain names, for public CI logs.",
+    )
     return parser.parse_args()
 
 
@@ -92,7 +97,7 @@ def main() -> int:
             return 0
 
         if args.audit:
-            auditor.audit_security_posture(REPORT_DIR)
+            auditor.audit_security_posture(REPORT_DIR, show_identities=not args.redact_identities)
             return 0
 
     return 1

@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import ANY, call
 
 import httpx
@@ -523,3 +524,31 @@ def test_zones_from_payload_rejects_malformed_zone():
     auditor = CloudflareAuditor("placeholder-token", "placeholder-account")
     with pytest.raises(CloudflareAPIError, match="without name or id"):
         auditor._zones_from_payload({"success": True, "result": [{"name": "example"}]})
+
+
+def test_redacted_audit_report_prints_counts_without_identities(capsys):
+    findings = [
+        {
+            "domain": "weak.example",
+            "zone_id": "zone-weak",
+            "settings": {},
+            "deviations": {"ssl": "flexible", "bot_fight_mode": "off"},
+        },
+        {
+            "domain": "other.example",
+            "zone_id": "zone-other",
+            "settings": {},
+            "deviations": {"ssl": "off"},
+        },
+    ]
+
+    CloudflareAuditor._print_security_audit_report(
+        3, findings, Path("report.csv"), show_identities=False
+    )
+
+    output = capsys.readouterr().out
+    assert "Domains deviating from standards: 2" in output
+    assert "ssl: 2 domain(s) expected full" in output
+    assert "bot_fight_mode: 1 domain(s) expected on" in output
+    for identity in ("weak.example", "other.example", "zone-weak", "zone-other"):
+        assert identity not in output

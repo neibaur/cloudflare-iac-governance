@@ -175,7 +175,14 @@ class CloudflareAuditor:
     def audit_security_posture(
         self,
         report_dir: Path = DEFAULT_REPORT_DIR,
+        *,
+        show_identities: bool = True,
     ) -> list[dict[str, Any]]:
+        """Audit every zone, write the CSV report, and print a summary.
+
+        With ``show_identities=False`` the printed summary contains counts only, so it is safe for
+        public CI logs. The CSV report on disk always contains full identities.
+        """
         zones = self._list_zones()
         rows: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []
@@ -213,7 +220,9 @@ class CloudflareAuditor:
                 )
 
         report_path = self._write_security_audit_csv(rows, report_dir)
-        self._print_security_audit_report(len(zones), findings, report_path)
+        self._print_security_audit_report(
+            len(zones), findings, report_path, show_identities=show_identities
+        )
         return findings
 
     def get_zone_security_settings(self, zone_id: str) -> dict[str, Any]:
@@ -461,6 +470,8 @@ class CloudflareAuditor:
         total_zones: int,
         findings: list[dict[str, Any]],
         report_path: Path,
+        *,
+        show_identities: bool = True,
     ) -> None:
         print("Cloudflare Security Posture Audit")
         print(f"Domains audited: {total_zones}")
@@ -469,6 +480,21 @@ class CloudflareAuditor:
 
         if not findings:
             print("All audited domains meet the configured standards.")
+            return
+
+        if not show_identities:
+            deviation_counts: dict[str, int] = {}
+            for finding in findings:
+                for key in cast(dict[str, Any], finding["deviations"]):
+                    deviation_counts[key] = deviation_counts.get(key, 0) + 1
+            print("")
+            for key in sorted(deviation_counts):
+                print(
+                    f"{key}: {deviation_counts[key]} domain(s) expected {SECURITY_STANDARDS[key]}"
+                )
+            print(
+                "Domain identities are omitted from this output. Run the audit locally for details."
+            )
             return
 
         print("")

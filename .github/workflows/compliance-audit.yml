@@ -1,6 +1,7 @@
 name: Compliance Audit
 
-# Read-only compliance audit and reporting. This workflow never runs Terraform against real
+# Read-only compliance audit and anonymized reporting. Public logs carry counts only, and raw
+# reports are never uploaded because they contain domain names and zone IDs. This workflow never runs Terraform against real
 # infrastructure: CI has no durable Terraform state, so any apply would start from empty state.
 # State-backed drift detection and guarded correction are designed in
 # docs/adr/0001-terraform-state-and-drift-remediation.md.
@@ -31,6 +32,9 @@ concurrency:
 
 jobs:
   audit:
+    # Repository secrets reach this job only on main. A manual dispatch from any other ref is skipped,
+    # so unreviewed branch code never runs with the Cloudflare or Google credentials.
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
 
     env:
@@ -52,14 +56,14 @@ jobs:
           python -m pip install -r requirements.txt
 
       - name: Run compliance audit
-        run: python run_tools.py --audit
+        run: python run_tools.py --audit --redact-identities
 
       - name: Report compliance gaps
         run: |
           if python scripts/check_compliance_gaps.py; then
             echo "Compliance gaps: none" >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Compliance gaps detected. Review the security-compliance-reports artifact." >> "$GITHUB_STEP_SUMMARY"
+            echo "Compliance gaps detected. Run the audit locally for per-domain details." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Sync compliance reports to Google Sheets
@@ -71,11 +75,3 @@ jobs:
           trap 'rm -f service_account.json' EXIT
           echo "$GCP_SERVICE_ACCOUNT_KEY" > service_account.json
           python scripts/aggregate_to_sheets.py
-
-      - name: Upload compliance reports
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: always()
-        with:
-          name: security-compliance-reports
-          path: reports/
-          if-no-files-found: ignore
