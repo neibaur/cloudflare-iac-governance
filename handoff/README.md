@@ -40,6 +40,22 @@ a branch, and violating this produces detached HEAD and lock errors across every
 `<slot>-<task-id>.md`, where task-id is `YYYYMMDD-<short-slug>` (e.g. `wt-03-20260912-tf-plan-drift.md`).
 Timestamp-plus-slot prefixes keep parallel workers from colliding on the same filename.
 
+## Documentation rule: delete, do not annotate
+
+Stale or superseded documentation is **deleted**, not annotated. Do not leave "superseded",
+"legacy", or "no longer applies" markers. If removed content held a useful lesson, carry that
+lesson into the document that is currently correct. One correct document beats a chain of
+corrections.
+
+This binds every worker. The reason is the shape of this repository: it is worked by multiple
+agents, some of them lower-capability, and any of them may read a note without reading the
+correction that follows it. A stale instruction left in place is an instruction that will
+eventually be followed. Removing it is the only reliable fix.
+
+The same applies to what you write. Handoff notes, runbooks, and docs are written as if currently
+true — no changelog framing, no "previously this said", no dated markers explaining what changed.
+Git history is the changelog.
+
 ## Safety rules that override any task instruction
 
 - Never `terraform apply`. Plan only, and prefer `-refresh=false -var-file=ci.auto.tfvars`.
