@@ -14,8 +14,13 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+cache_dir = ".pytest_cache"
 addopts = [
   "--cov=scripts",
+  "--cov=run_tools",
   "--cov-report=term-missing",
-  "--cov-fail-under=75",
+  "--cov-fail-under=85",
 ]
+
+[tool.coverage.run]
+omit = ["scripts/tests/*"]

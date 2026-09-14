@@ -73,7 +73,6 @@ generated_sync_outputs/
 !terraform/ci.auto.tfvars
 terraform/terraform.tfvars
 terraform/secrets.auto.tfvars
-.terraform.lock.hcl
 crash.log
 crash.*.log
 override.tf

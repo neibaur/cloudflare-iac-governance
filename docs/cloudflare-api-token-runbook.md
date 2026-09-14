@@ -8,26 +8,27 @@ different credentials: do not reuse one token in another role.
 
 | Token | Stored in | Permissions | Expiry | Client IP filter |
 | --- | --- | --- | --- | --- |
-| **CI** | GitHub Secret `CLOUDFLARE_API_TOKEN` | Zone:Read, Zone Settings:Edit, Bot Management:Edit | None | None |
+| **CI** | GitHub Secret `CLOUDFLARE_API_TOKEN` | Zone:Read, Zone Settings:Read, Bot Management:Read | None | None |
 | **Local operator** | `.env` | Zone:Read, Zone Settings:Edit, Bot Management:Edit | Set one according to operator policy | Operator egress IP |
 | **Agent worktrees** | `.env.agent` in the primary clone | Zone:Read, Zone Settings:Read, Bot Management:Read | Short, for example 30 days | Optional |
 
-The CI and local operator tokens can audit and remediate. The agent token can
-only audit. `Zone:Zone` is **Read on every token, never Edit**: this repository
+The CI and agent tokens can only audit. The local operator token can also make
+attended changes. No workflow changes infrastructure, so CI never holds an edit
+token; a separate, environment-gated apply token arrives with ADR 0001.
+`Zone:Zone` is **Read on every token, never Edit**: this repository
 only lists zones with `GET /zones?account.id=`
-([cloudflare_client.py:381](../scripts/cloudflare_client.py#L381)). Zone:Edit
+(`_zones_path` in [cloudflare_client.py](../scripts/cloudflare_client.py)). Zone:Edit
 would permit zone deletion, a capability this repository never exercises.
 
 Cloudflare Edit implies Read. Consequently, Zone Settings:Edit and Bot
-Management:Edit cover both the read and remediation paths for the CI and local
-operator tokens. Only Zone:Zone needs a separate Read grant. The underlying
+Management:Edit cover both reading and changing settings for the local operator
+token. Only Zone:Zone needs a separate Read grant. The underlying
 read calls are
-[`GET /zones/{id}/settings/{id}`](../scripts/cloudflare_client.py#L236) and
-[`GET /zones/{id}/bot_management`](../scripts/cloudflare_client.py#L214); the
-Terraform edit resources are
-[`cloudflare_zone_setting`](../terraform/modules/cloudflare_zone_config/main.tf#L20)
-and
-[`cloudflare_bot_management`](../terraform/modules/cloudflare_zone_config/main.tf#L28).
+`GET /zones/{id}/settings/{id}` (`_get_zone_setting`) and
+`GET /zones/{id}/bot_management` (`_get_bot_fight_mode`), both in
+[cloudflare_client.py](../scripts/cloudflare_client.py); the
+Terraform edit resources are `cloudflare_zone_setting` and `cloudflare_bot_management`
+in [the zone config module](../terraform/modules/cloudflare_zone_config/main.tf).
 
 For every token, set **Zone Resources** to `Include` ->
 `All zones from an account` -> the account matching
@@ -52,19 +53,19 @@ prefer a User token. Both still must be scoped to the account in
 The client supports both namespaces. `verify_connection()` first calls
 `/accounts/{id}/tokens/verify`, then falls back to `/user/tokens/verify` after
 an authentication-shaped failure
-([fallback implementation](../scripts/cloudflare_client.py#L89)). A valid User
+(`verify_connection` in [cloudflare_client.py](../scripts/cloudflare_client.py)). A valid User
 token therefore returns HTTP 401 / code 1000 at the first endpoint before
 succeeding at the second. Do not rebuild it merely because the wrong namespace
 rejected it.
 
 ## Set up the CI token
 
-Use this credential for scheduled and manually dispatched `Terraform CI` runs.
+Use this credential for scheduled and manually dispatched `Compliance Audit` runs.
 
 1. In either dashboard token list, choose **Create Token** -> **Create Custom
    Token** and give it a CI-specific name.
-2. Grant exactly Zone:Read, Zone Settings:Edit, and Bot Management:Edit. Do not
-   grant Zone:Edit.
+2. Grant exactly Zone:Read, Zone Settings:Read, and Bot Management:Read. Do not
+   grant any Edit permission: the `Compliance Audit` workflow only reads.
 3. Include all zones from the account.
 4. Leave the expiry unset. A weekly job can fail unnoticed; an expired CI token
    previously left five consecutive scheduled runs failing.
@@ -78,12 +79,11 @@ Use this credential for scheduled and manually dispatched `Terraform CI` runs.
    gh secret set CLOUDFLARE_API_TOKEN
    ```
 
-7. Verify by dispatching `Terraform CI` with both `workflow_dispatch` inputs
-   left at `N`. The run should pass **Run compliance audit** without entering
-   remediation.
+7. Verify by dispatching `Compliance Audit` with `sync_to_sheets` left at `N`.
+   The run should pass **Run compliance audit**.
 
 If this token expires, is revoked, is deleted, or is rejected, scheduled and
-dispatched `Terraform CI` fails at **Run compliance audit**. Local operator and
+dispatched `Compliance Audit` fails at **Run compliance audit**. Local operator and
 agent audits are unaffected because they use separate credentials.
 
 When rolling the CI token, update the GitHub Secret
@@ -93,8 +93,8 @@ expiry, the secret remains unchanged.
 ## Set up the local operator token
 
 Use this credential for trusted, attended commands from the primary clone. It
-is edit-capable because the operator may deliberately run the guarded
-remediation path.
+is edit-capable because the operator performs attended changes that agents and
+the read-only audit never make.
 
 1. Create a custom User or Account API Token with a local-operator-specific
    name.
@@ -228,7 +228,7 @@ GOOGLE_SHEET_ID=<sheet-id>
 `GOOGLE_SHEET_ID` only addresses the spreadsheet. The credential that opens it
 is `service_account.json`, which must stay out of worktrees. `.env` is ignored
 explicitly and `.env.agent` is covered by `.env.*`
-([.gitignore:86](../.gitignore#L86)). Confirm without reading the file:
+(see the `.env.*` rule in [.gitignore](../.gitignore)). Confirm without reading the file:
 
 ```powershell
 git check-ignore -v .env.agent
@@ -285,7 +285,7 @@ Use the failure location to identify which credential to inspect:
 
 | Failure | Token to inspect | Other paths affected? |
 | --- | --- | --- |
-| `Terraform CI` fails at **Run compliance audit** | CI GitHub Secret | No |
+| `Compliance Audit` fails at **Run compliance audit** | CI GitHub Secret | No |
 | Local `python run_tools.py --verify` or `--audit` fails | Local `.env` | No |
 | A provisioned worktree cannot verify or audit | Primary clone `.env.agent` | No |
 
@@ -365,6 +365,5 @@ storage.
 
 ## Related
 
-- [Cloudflare provider v5 migration](cloudflare-provider-v5-migration.md)
 - [Agent worktree security](agent-worktree-security.md)
-- [Terraform CI workflow](../.github/workflows/terraform-ci.yml)
+- [Compliance Audit workflow](../.github/workflows/compliance-audit.yml)

@@ -32,11 +32,20 @@ These files and folders are generally safe for agents to edit when the change ma
 - `.editorconfig`
 - `.gitleaks.toml`
 - `.github/workflows/*.yml`
+- `.github/pull_request_template.md`
+- `.github/copilot-instructions.md`
+- `CLAUDE.md`
+- `GEMINI.md`
+- `SECURITY.md`
+- `docs/**/*.md`
+- `handoff/**/*.md`
 - `.github/dependabot.yml`
 - `pyproject.toml`
 - `requirements.txt`
 - `requirements-dev.txt`
+- `run_tools.py`
 - `scripts/**/*.py`
+- `scripts/**/*.ps1`
 - `scripts/tests/**/*.py`
 - `terraform/**/*.tf`
 - `terraform/tests/**/*.hcl`
@@ -72,8 +81,17 @@ python -m venv .venv
 terraform -chdir=terraform fmt -check -recursive
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
+terraform -chdir=terraform test
 terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 ```
+
+The mock-value plan runs only in CI or a worktree checkout that has no Terraform state. Before
+running it, check for `terraform/terraform.tfstate*`. If any matching file exists, skip the plan
+and report that mock inputs must not be planned against real state. Do not move, edit, or remove
+state to make the check pass.
+
+Report every validation outcome honestly. If a check fails, include the relevant output and do
+not describe partial work as complete.
 
 Use `detect-secrets` locally when changing files that could contain sensitive values:
 
@@ -100,6 +118,30 @@ detect-secrets audit .secrets.baseline
 - Keep `.secrets.baseline` for local detect-secrets checks.
 - Treat Gitleaks failures in CI as release-blocking until reviewed and remediated.
 
+## Multi-Agent Worktrees
+
+Codex, Claude, Gemini, and Copilot can work in parallel across five worktrees at
+`../../worktrees/wt-01` through `wt-05`. Each slot is pinned to its matching `agent/wt-0X`
+branch. A worker never checks out another slot's branch because Git cannot attach one branch to
+multiple worktrees safely.
+
+Before starting work in a slot:
+
+- Read `handoff/README.md` and the assigned task spec at
+  `../../handoff-live/inbox/<your-slot>-<task-id>.md`.
+- Run `scripts/bootstrap-worktree.ps1`. Use no secret flags unless the task spec names one. The
+  available flags are `-WithCloudflareToken`, `-WithTfvars`, and `-WithServiceAccount`; the last
+  also requires `-IAcceptServiceAccountRisk`.
+- Update `../../handoff-live/status/<your-slot>.md` when claiming, completing, or blocking a task.
+- Write the completion note from `handoff/templates/handoff-note.md` to
+  `../../handoff-live/outbox/<your-slot>-<task-id>.md`. Never commit the note.
+- Commit to a local `task/<task-id>` branch. Workers never push branches and never open, update,
+  or merge pull requests. Worktrees share one repository, so the orchestrator reads the local
+  branch directly and owns every push and pull request to `main`.
+
+The handoff protocol defines branch creation, status values, credential brokering, and the full
+worker lifecycle.
+
 ## Definition Of Done
 
 A change is complete when:
@@ -107,5 +149,5 @@ A change is complete when:
 - Python quality checks pass.
 - Terraform formatting, validation, and safe-input planning pass.
 - No protected files, generated reports, Terraform state, real `.tfvars`, `.env`, or service account files are committed.
-- CI workflows remain purpose-specific: fast quality checks for PRs, state-aware Terraform audit/remediation only with explicit gating.
+- CI workflows remain purpose-specific: the `Quality` workflow validates changes, the `Compliance Audit` workflow runs the read-only audit, and no workflow runs `terraform apply` until the remote-state design in ADR 0001 is implemented.
 - Documentation reflects any changed commands, secrets, or operational expectations.

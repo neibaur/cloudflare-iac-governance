@@ -1,3 +1,4 @@
+from pathlib import Path
 from unittest.mock import ANY, call
 
 import httpx
@@ -147,21 +148,22 @@ def test_get_zone_setting_rejects_missing_result(mocker, cloudflare_fixture_data
 
 def test_setting_value_rejects_unexpected_setting_id():
     with pytest.raises(CloudflareAPIError, match="Expected Cloudflare setting"):
-        CloudflareAuditor._setting_value({"id": "tls_1_3", "value": "on"}, "ssl")
+        CloudflareAuditor("scoped-test-token", "test-account-id")._setting_value(
+            {"id": "tls_1_3", "value": "on"}, "ssl"
+        )
 
 
 def test_setting_value_rejects_missing_value():
     with pytest.raises(CloudflareAPIError, match="did not include a value"):
-        CloudflareAuditor._setting_value({"id": "ssl"}, "ssl")
+        CloudflareAuditor("scoped-test-token", "test-account-id")._setting_value(
+            {"id": "ssl"}, "ssl"
+        )
 
 
-def test_request_returns_json_object(mocker):
-    response = httpx.Response(
-        200,
-        json={"success": True, "result": {"status": "active"}},
-        request=httpx.Request("GET", "https://api.example.test/user/tokens/verify"),
+def test_request_returns_json_object(respx_mock):
+    route = respx_mock.get("https://api.example.test/accounts/test-account-id/tokens/verify").mock(
+        return_value=httpx.Response(200, json={"success": True, "result": {"status": "active"}})
     )
-    http_get = mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
     auditor = CloudflareAuditor(
         api_token="scoped-test-token",
         account_id="test-account-id",
@@ -171,13 +173,29 @@ def test_request_returns_json_object(mocker):
     payload = auditor._request("/accounts/test-account-id/tokens/verify")
 
     assert payload == {"success": True, "result": {"status": "active"}}
-    http_get.assert_called_once_with(
-        "https://api.example.test/accounts/test-account-id/tokens/verify",
-        headers={
-            "Authorization": "Bearer scoped-test-token",
-            "Content-Type": "application/json",
-        },
-        timeout=30,
+    assert route.call_count == 1
+    request = route.calls.last.request
+    assert request.headers["Authorization"] == "Bearer scoped-test-token"
+    assert request.headers["Content-Type"] == "application/json"
+    assert auditor._client.timeout == httpx.Timeout(30)
+
+
+def test_default_base_url_keeps_client_v4_prefix(respx_mock):
+    zones = respx_mock.get("https://api.cloudflare.com/client/v4/zones").mock(
+        return_value=httpx.Response(200, json={"success": True, "result": []})
+    )
+    verify = respx_mock.get("https://api.cloudflare.com/client/v4/user/tokens/verify").mock(
+        return_value=httpx.Response(200, json={"success": True, "result": {"status": "active"}})
+    )
+    auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
+
+    auditor._request(auditor._zones_path(1))
+    auditor._request("/user/tokens/verify")
+
+    assert zones.call_count == 1
+    assert verify.call_count == 1
+    assert str(zones.calls.last.request.url).startswith(
+        "https://api.cloudflare.com/client/v4/zones?"
     )
 
 
@@ -188,26 +206,27 @@ def test_request_reports_http_error(mocker, status_code):
         json={"success": False, "errors": [{"message": "Request failed"}]},
         request=httpx.Request("GET", "https://api.example.test/failure"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
     auditor = CloudflareAuditor(
         api_token="scoped-test-token",
         account_id="test-account-id",
         base_url="https://api.example.test",
     )
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError, match=f"HTTP {status_code}"):
         auditor._request("/failure")
 
 
 def test_request_reports_network_error(mocker):
-    mocker.patch(
-        "scripts.cloudflare_client.httpx.get",
-        side_effect=httpx.RequestError("connection failed"),
-    )
     auditor = CloudflareAuditor(
         api_token="scoped-test-token",
         account_id="test-account-id",
         base_url="https://api.example.test",
+    )
+    mocker.patch.object(
+        auditor._client,
+        "get",
+        side_effect=httpx.RequestError("connection failed"),
     )
 
     with pytest.raises(CloudflareAPIError, match="connection failed"):
@@ -220,12 +239,12 @@ def test_request_reports_malformed_json(mocker):
         content=b"{not-json",
         request=httpx.Request("GET", "https://api.example.test/bad-json"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
     auditor = CloudflareAuditor(
         api_token="scoped-test-token",
         account_id="test-account-id",
         base_url="https://api.example.test",
     )
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError, match="not valid JSON"):
         auditor._request("/bad-json")
@@ -237,12 +256,12 @@ def test_request_rejects_non_object_json(mocker):
         json=["not", "an", "object"],
         request=httpx.Request("GET", "https://api.example.test/list-json"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
     auditor = CloudflareAuditor(
         api_token="scoped-test-token",
         account_id="test-account-id",
         base_url="https://api.example.test",
     )
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError, match="not a JSON object"):
         auditor._request("/list-json")
@@ -250,14 +269,6 @@ def test_request_rejects_non_object_json(mocker):
 
 def test_list_all_zones_prints_terraform_hcl(mocker, capsys):
     auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
-    mocker.patch.object(
-        auditor,
-        "verify_connection",
-        return_value={
-            "status": "active",
-            "policies": [{"permission_groups": [{"name": "Zone Read"}]}],
-        },
-    )
     request = mocker.patch.object(
         auditor,
         "_request",
@@ -317,14 +328,13 @@ def test_list_all_zones_explains_zone_access_failure(
     mocker, error_code, expected_message, unexpected_message
 ):
     auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
-    mocker.patch.object(auditor, "verify_connection", return_value={"status": "active"})
     errors = [] if error_code is None else [{"code": error_code, "message": "request rejected"}]
     response = httpx.Response(
         403,
         json={"success": False, "errors": errors},
         request=httpx.Request("GET", "https://api.example.test/zones"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError) as excinfo:
         auditor.list_all_zones()
@@ -337,13 +347,12 @@ def test_list_all_zones_explains_zone_access_failure(
 
 def test_list_all_zones_explains_ip_filtering_on_github_runners(mocker):
     auditor = CloudflareAuditor(api_token="scoped-test-token", account_id="test-account-id")
-    mocker.patch.object(auditor, "verify_connection", return_value={"status": "active"})
     response = httpx.Response(
         403,
         json={"success": False, "errors": [{"code": 9109, "message": "request rejected"}]},
         request=httpx.Request("GET", "https://api.example.test/zones"),
     )
-    mocker.patch("scripts.cloudflare_client.httpx.get", return_value=response)
+    mocker.patch.object(auditor._client, "get", return_value=response)
 
     with pytest.raises(CloudflareAPIError) as excinfo:
         auditor.list_all_zones()
@@ -407,6 +416,8 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
         }
     ]
     output = capsys.readouterr().out
+    progress_lines = [line for line in output.splitlines() if line.startswith("[")]
+    assert progress_lines == ["[1/2] checking zone...", "[2/2] checking zone..."]
     assert "Domains audited: 2" in output
     assert "Domains deviating from standards: 1" in output
     assert "CSV report: 20260430T120000Z_security_compliance_report.csv" in output
@@ -436,11 +447,108 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
     )
 
 
+def test_fixture_audit_reuses_one_client_and_keeps_six_requests(mocker):
+    client_type = mocker.patch("scripts.cloudflare_client.httpx.Client")
+    client = client_type.return_value
+
+    def response(payload):
+        value = mocker.Mock()
+        value.raise_for_status.return_value = None
+        value.json.return_value = payload
+        return value
+
+    client.get.side_effect = [
+        response({"success": True, "result": {"status": "active"}}),
+        response(
+            {
+                "success": True,
+                "result": [{"name": "fixture.example", "id": "fixture-zone"}],
+            }
+        ),
+        response({"success": True, "result": {"id": "ssl", "value": "full"}}),
+        response({"success": True, "result": {"id": "security_level", "value": "medium"}}),
+        response({"success": True, "result": {"id": "always_use_https", "value": "on"}}),
+        response({"success": True, "result": {"fight_mode": True}}),
+    ]
+    auditor = CloudflareAuditor("fixture-token", "fixture-account")
+    mocker.patch.object(auditor, "_write_security_audit_csv", return_value="fixture.csv")
+
+    auditor.verify_connection()
+    auditor.audit_security_posture()
+
+    client_type.assert_called_once()
+    assert client.get.call_count == 6
+
+
+@pytest.mark.parametrize(
+    "operation",
+    [
+        lambda auditor: auditor._get_zone_setting("fixture-zone", "ssl"),
+        lambda auditor: auditor._get_bot_fight_mode("fixture-zone"),
+        lambda auditor: auditor._zones_from_payload(
+            {"success": False, "errors": ["fixture-account"]}
+        ),
+        lambda auditor: auditor._setting_value({"id": "fixture-account", "value": "on"}, "ssl"),
+    ],
+)
+def test_payload_validation_paths_redact_account_id(mocker, operation):
+    auditor = CloudflareAuditor("fixture-token", "fixture-account")
+    mocker.patch.object(
+        auditor,
+        "_request",
+        return_value={"success": False, "errors": ["fixture-account"]},
+    )
+
+    with pytest.raises(CloudflareAPIError) as excinfo:
+        operation(auditor)
+
+    assert "fixture-account" not in str(excinfo.value)
+
+
+def test_context_manager_closes_reusable_client(mocker):
+    client_type = mocker.patch("scripts.cloudflare_client.httpx.Client")
+
+    with CloudflareAuditor("fixture-token", "fixture-account"):
+        pass
+
+    client_type.return_value.close.assert_called_once_with()
+
+
 def test_zones_from_payload_rejects_failed_response():
+    auditor = CloudflareAuditor("placeholder-token", "placeholder-account")
     with pytest.raises(CloudflareAPIError, match="zone list request failed"):
-        CloudflareAuditor._zones_from_payload({"success": False, "errors": ["forbidden"]})
+        auditor._zones_from_payload({"success": False, "errors": ["forbidden"]})
 
 
 def test_zones_from_payload_rejects_malformed_zone():
+    auditor = CloudflareAuditor("placeholder-token", "placeholder-account")
     with pytest.raises(CloudflareAPIError, match="without name or id"):
-        CloudflareAuditor._zones_from_payload({"success": True, "result": [{"name": "example"}]})
+        auditor._zones_from_payload({"success": True, "result": [{"name": "example"}]})
+
+
+def test_redacted_audit_report_prints_counts_without_identities(capsys):
+    findings = [
+        {
+            "domain": "weak.example",
+            "zone_id": "zone-weak",
+            "settings": {},
+            "deviations": {"ssl": "flexible", "bot_fight_mode": "off"},
+        },
+        {
+            "domain": "other.example",
+            "zone_id": "zone-other",
+            "settings": {},
+            "deviations": {"ssl": "off"},
+        },
+    ]
+
+    CloudflareAuditor._print_security_audit_report(
+        3, findings, Path("report.csv"), show_identities=False
+    )
+
+    output = capsys.readouterr().out
+    assert "Domains deviating from standards: 2" in output
+    assert "ssl: 2 domain(s) expected full" in output
+    assert "bot_fight_mode: 1 domain(s) expected on" in output
+    for identity in ("weak.example", "other.example", "zone-weak", "zone-other"):
+        assert identity not in output

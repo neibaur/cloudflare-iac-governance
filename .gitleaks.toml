@@ -1,4 +1,4 @@
-title = "cloudflare_IaC Gitleaks config"
+title = "cloudflare-iac-governance Gitleaks config"
 
 [extend]
 useDefault = true

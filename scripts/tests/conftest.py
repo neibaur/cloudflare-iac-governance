@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import sys
-import types
 from dataclasses import dataclass
 
 import pytest
@@ -30,37 +28,17 @@ class CloudflareFixtureData:
             {"id": "tls_1_3", "value": "on", "modified_on": None},
         ]
 
-    @property
-    def dns_records(self) -> list[dict[str, object]]:
-        return [
-            {
-                "id": "record-1",
-                "zone_id": self.zone_id,
-                "name": self.zone_name,
-                "type": "A",
-                "content": "192.0.2.1",
-                "proxied": True,
-            }
-        ]
-
 
 @pytest.fixture
 def cloudflare_fixture_data() -> CloudflareFixtureData:
     return CloudflareFixtureData()
 
 
-@pytest.fixture
-def mock_cloudflare_api(mocker, cloudflare_fixture_data):
-    """Mock a Cloudflare client object without reaching the real API."""
-    client = mocker.Mock(name="cloudflare_client")
-
-    client.zones.list.return_value = [cloudflare_fixture_data.zone]
-    client.zones.get.return_value = cloudflare_fixture_data.zone
-    client.zones.settings.get.return_value = cloudflare_fixture_data.zone_settings
-    client.zones.settings.edit.return_value = {"success": True}
-    client.dns.records.list.return_value = cloudflare_fixture_data.dns_records
-
-    return client
+@pytest.fixture(autouse=True)
+def ignore_test_runner_proxies(monkeypatch):
+    """Keep construction of mocked HTTP clients independent of host proxy settings."""
+    for variable in ("ALL_PROXY", "HTTP_PROXY", "HTTPS_PROXY"):
+        monkeypatch.delenv(variable, raising=False)
 
 
 @pytest.fixture
@@ -114,37 +92,3 @@ def mock_cloudflare_token_verify(mocker):
             },
         },
     )
-
-
-@pytest.fixture
-def mock_cloudflare_http(mocker, cloudflare_fixture_data):
-    """Mock requests-based Cloudflare API calls used by audit scripts."""
-    if "requests" not in sys.modules:
-        fake_requests = types.ModuleType("requests")
-        fake_requests.request = mocker.Mock(name="requests.request")
-
-        class Session:
-            def request(self, *args, **kwargs):
-                raise NotImplementedError
-
-        fake_requests.Session = Session
-        sys.modules["requests"] = fake_requests
-
-    response = mocker.Mock(name="cloudflare_response")
-    response.status_code = 200
-    response.raise_for_status.return_value = None
-    response.json.return_value = {
-        "success": True,
-        "errors": [],
-        "messages": [],
-        "result": {
-            "zones": [cloudflare_fixture_data.zone],
-            "settings": cloudflare_fixture_data.zone_settings,
-            "dns_records": cloudflare_fixture_data.dns_records,
-        },
-    }
-
-    mocker.patch("requests.request", return_value=response)
-    mocker.patch("requests.Session.request", return_value=response, create=True)
-
-    return response

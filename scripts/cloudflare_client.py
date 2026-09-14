@@ -62,6 +62,24 @@ class CloudflareAuditor:
         self.api_token = api_token
         self.account_id = account_id
         self.base_url = base_url.rstrip("/")
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            headers={
+                "Authorization": f"Bearer {self.api_token}",
+                "Content-Type": "application/json",
+            },
+            timeout=30,
+        )
+
+    def __enter__(self) -> CloudflareAuditor:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Release the reusable HTTP connection pool."""
+        self._client.close()
 
     def verify_connection(self) -> dict[str, Any]:
         """Verify the API token against whichever token list actually owns it.
@@ -157,12 +175,21 @@ class CloudflareAuditor:
     def audit_security_posture(
         self,
         report_dir: Path = DEFAULT_REPORT_DIR,
+        *,
+        show_identities: bool = True,
     ) -> list[dict[str, Any]]:
+        """Audit every zone, write the CSV report, and print a summary.
+
+        With ``show_identities=False`` the printed summary contains counts only, so it is safe for
+        public CI logs. The CSV report on disk always contains full identities.
+        """
         zones = self._list_zones()
         rows: list[dict[str, Any]] = []
         findings: list[dict[str, Any]] = []
 
-        for zone in sorted(zones, key=lambda item: cast(str, item["name"])):
+        sorted_zones = sorted(zones, key=lambda item: cast(str, item["name"]))
+        for index, zone in enumerate(sorted_zones, start=1):
+            print(f"[{index}/{len(sorted_zones)}] checking zone...", flush=True)
             settings = self.get_zone_security_settings(cast(str, zone["id"]))
             deviations = {
                 setting_id: value
@@ -193,7 +220,9 @@ class CloudflareAuditor:
                 )
 
         report_path = self._write_security_audit_csv(rows, report_dir)
-        self._print_security_audit_report(len(zones), findings, report_path)
+        self._print_security_audit_report(
+            len(zones), findings, report_path, show_identities=show_identities
+        )
         return findings
 
     def get_zone_security_settings(self, zone_id: str) -> dict[str, Any]:
@@ -215,16 +244,14 @@ class CloudflareAuditor:
 
         if not payload.get("success", False):
             errors = payload.get("errors") or []
-            raise CloudflareAPIError(f"Cloudflare bot management request failed: {errors}")
+            raise self._error(f"Cloudflare bot management request failed: {errors}")
 
         result = payload.get("result")
         if not result:
             return "off"
 
         if not isinstance(result, dict):
-            raise CloudflareAPIError(
-                "Cloudflare bot management response did not include a result object."
-            )
+            raise self._error("Cloudflare bot management response did not include a result object.")
 
         fight_mode = result.get("fight_mode")
         if isinstance(fight_mode, str):
@@ -237,36 +264,28 @@ class CloudflareAuditor:
 
         if not payload.get("success", False):
             errors = payload.get("errors") or []
-            raise CloudflareAPIError(f"Cloudflare API request failed: {errors}")
+            raise self._error(f"Cloudflare API request failed: {errors}")
 
         result = payload.get("result")
         if not isinstance(result, dict):
-            raise CloudflareAPIError("Cloudflare API response did not include a result object.")
+            raise self._error("Cloudflare API response did not include a result object.")
 
         return result
 
-    @staticmethod
-    def _setting_value(setting: dict[str, Any], setting_id: str) -> Any:
+    def _setting_value(self, setting: dict[str, Any], setting_id: str) -> Any:
         if setting.get("id") != setting_id:
-            raise CloudflareAPIError(
+            raise self._error(
                 f"Expected Cloudflare setting '{setting_id}', got '{setting.get('id')}'."
             )
 
         if "value" not in setting:
-            raise CloudflareAPIError(f"Cloudflare setting '{setting_id}' did not include a value.")
+            raise self._error(f"Cloudflare setting '{setting_id}' did not include a value.")
 
         return setting["value"]
 
     def _request(self, path: str) -> dict[str, Any]:
         try:
-            response = httpx.get(
-                f"{self.base_url}{path}",
-                headers={
-                    "Authorization": f"Bearer {self.api_token}",
-                    "Content-Type": "application/json",
-                },
-                timeout=30,
-            )
+            response = self._client.get(path)
             response.raise_for_status()
             payload = response.json()
         except httpx.HTTPStatusError as exc:
@@ -288,10 +307,6 @@ class CloudflareAuditor:
         return cast(dict[str, Any], payload)
 
     def _assert_zone_read_permission(self) -> dict[str, Any]:
-        verification = self.verify_connection()
-        if self._verification_includes_zone_read(verification):
-            return self._request(self._zones_path(1))
-
         try:
             return self._request(self._zones_path(1))
         except CloudflareAPIError as exc:
@@ -380,37 +395,22 @@ class CloudflareAuditor:
         account_id = quote(self.account_id, safe="")
         return f"/zones?account.id={account_id}&page={page}&per_page=50"
 
-    @classmethod
-    def _verification_includes_zone_read(cls, value: Any) -> bool:
-        if isinstance(value, dict):
-            return any(cls._verification_includes_zone_read(item) for item in value.values())
-
-        if isinstance(value, list):
-            return any(cls._verification_includes_zone_read(item) for item in value)
-
-        if isinstance(value, str):
-            normalized = value.lower().replace(" ", "").replace("_", "").replace("-", "")
-            return "zoneread" in normalized or "zone.read" in value.lower()
-
-        return False
-
-    @staticmethod
-    def _zones_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    def _zones_from_payload(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
         if not payload.get("success", False):
             errors = payload.get("errors") or []
-            raise CloudflareAPIError(f"Cloudflare zone list request failed: {errors}")
+            raise self._error(f"Cloudflare zone list request failed: {errors}")
 
         result = payload.get("result")
         if not isinstance(result, list):
-            raise CloudflareAPIError("Cloudflare zone list response did not include a result list.")
+            raise self._error("Cloudflare zone list response did not include a result list.")
 
         zones: list[dict[str, Any]] = []
         for zone in result:
             if not isinstance(zone, dict):
-                raise CloudflareAPIError("Cloudflare zone list included a malformed zone object.")
+                raise self._error("Cloudflare zone list included a malformed zone object.")
 
             if not isinstance(zone.get("name"), str) or not isinstance(zone.get("id"), str):
-                raise CloudflareAPIError("Cloudflare zone list included a zone without name or id.")
+                raise self._error("Cloudflare zone list included a zone without name or id.")
 
             zones.append(cast(dict[str, Any], zone))
 
@@ -470,6 +470,8 @@ class CloudflareAuditor:
         total_zones: int,
         findings: list[dict[str, Any]],
         report_path: Path,
+        *,
+        show_identities: bool = True,
     ) -> None:
         print("Cloudflare Security Posture Audit")
         print(f"Domains audited: {total_zones}")
@@ -478,6 +480,21 @@ class CloudflareAuditor:
 
         if not findings:
             print("All audited domains meet the configured standards.")
+            return
+
+        if not show_identities:
+            deviation_counts: dict[str, int] = {}
+            for finding in findings:
+                for key in cast(dict[str, Any], finding["deviations"]):
+                    deviation_counts[key] = deviation_counts.get(key, 0) + 1
+            print("")
+            for key in sorted(deviation_counts):
+                print(
+                    f"{key}: {deviation_counts[key]} domain(s) expected {SECURITY_STANDARDS[key]}"
+                )
+            print(
+                "Domain identities are omitted from this output. Run the audit locally for details."
+            )
             return
 
         print("")
