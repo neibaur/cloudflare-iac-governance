@@ -133,6 +133,9 @@ run "override_inside_inventory_is_rejected" {
         ssl     = "strict"
       }
     }
+
+    # Clear the file-level overrides, so only the inventory-shape validation can fail this run.
+    security_overrides = {}
   }
 
   expect_failures = [
