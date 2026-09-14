@@ -175,12 +175,19 @@ Generate Terraform-compatible domain mappings from Cloudflare:
 python run_tools.py --list
 ```
 
-The command prints HCL for the Terraform `domains` variable:
+The command prints HCL for the Terraform `domains` inventory variable. It remains valid as-is;
+optional posture exceptions belong in a separate `security_overrides` map:
 
 ```hcl
 domains = {
   "example.com" = {
     zone_id = "..."
+  }
+}
+
+security_overrides = {
+  "example.com" = {
+    ssl = "strict"
   }
 }
 ```

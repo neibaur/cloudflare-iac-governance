@@ -7,7 +7,12 @@ variables {
     }
     "override.example" = {
       zone_id = "023e105f4ecef8ad9ca31a8372d0c354"
-      ssl     = "strict"
+    }
+  }
+
+  security_overrides = {
+    "override.example" = {
+      ssl = "strict"
     }
   }
 }
@@ -51,7 +56,8 @@ run "empty_domain_map_rejects_policy_catalog_mismatch" {
   command = plan
 
   variables {
-    domains = {}
+    domains            = {}
+    security_overrides = {}
   }
 
   override_module {
@@ -102,7 +108,34 @@ run "empty_override_is_rejected" {
     domains = {
       "empty.example" = {
         zone_id = "023e105f4ecef8ad9ca31a8372d0c355"
-        ssl     = ""
+      }
+    }
+
+    security_overrides = {
+      "empty.example" = {
+        ssl = ""
+      }
+    }
+  }
+
+  expect_failures = [
+    var.security_overrides,
+  ]
+}
+
+run "override_for_unknown_domain_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "known.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c356"
+      }
+    }
+
+    security_overrides = {
+      "unknown.example" = {
+        ssl = "strict"
       }
     }
   }
@@ -116,7 +149,8 @@ run "empty_domain_map_plans" {
   command = plan
 
   variables {
-    domains = {}
+    domains            = {}
+    security_overrides = {}
   }
 
   assert {

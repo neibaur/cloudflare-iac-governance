@@ -43,10 +43,10 @@ module "cloudflare_zone_config" {
   zone_name = each.key
 
   # A per-domain override wins only when it is set (non-null); otherwise the policy value applies.
-  ssl                     = each.value.ssl != null ? each.value.ssl : local.security_standard["ssl"]
-  security_level          = each.value.security_level != null ? each.value.security_level : local.security_standard["security_level"]
-  always_use_https        = each.value.always_use_https != null ? each.value.always_use_https : local.security_standard["always_use_https"]
-  min_tls_version         = each.value.min_tls_version != null ? each.value.min_tls_version : local.security_standard["min_tls_version"]
-  browser_integrity_check = each.value.browser_integrity_check != null ? each.value.browser_integrity_check : local.security_standard["browser_check"]
-  bot_fight_mode          = each.value.bot_fight_mode != null ? each.value.bot_fight_mode : local.security_standard["bot_fight_mode"]
+  ssl                     = try(var.security_overrides[each.key].ssl, null) != null ? var.security_overrides[each.key].ssl : local.security_standard["ssl"]
+  security_level          = try(var.security_overrides[each.key].security_level, null) != null ? var.security_overrides[each.key].security_level : local.security_standard["security_level"]
+  always_use_https        = try(var.security_overrides[each.key].always_use_https, null) != null ? var.security_overrides[each.key].always_use_https : local.security_standard["always_use_https"]
+  min_tls_version         = try(var.security_overrides[each.key].min_tls_version, null) != null ? var.security_overrides[each.key].min_tls_version : local.security_standard["min_tls_version"]
+  browser_integrity_check = try(var.security_overrides[each.key].browser_integrity_check, null) != null ? var.security_overrides[each.key].browser_integrity_check : local.security_standard["browser_check"]
+  bot_fight_mode          = try(var.security_overrides[each.key].bot_fight_mode, null) != null ? var.security_overrides[each.key].bot_fight_mode : local.security_standard["bot_fight_mode"]
 }
