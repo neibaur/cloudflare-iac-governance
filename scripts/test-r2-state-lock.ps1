@@ -30,19 +30,28 @@
     It refuses to run from an agent worktree, because worktrees hold no credentials by design.
 
 .PARAMETER HoldSeconds
-    How long the lock holder keeps the lock. Increase it on slow connections. Default 40.
+    How long each lock holder keeps the lock after acquiring it. Default 40.
+
+.PARAMETER AcquireTimeoutSeconds
+    How long to wait for a lock holder to acquire the lock before failing. Increase it on slow
+    connections. Default 180.
 
 .EXAMPLE
     powershell -NoProfile -File .\scripts\test-r2-state-lock.ps1
 
 .NOTES
     Windows only. Needs network access to the Terraform registry and the R2 endpoint. A passing
-    run leaves no object in the bucket.
+    run leaves no object in the bucket. When the script exits, even on failure or Ctrl+C, it stops
+    its Terraform processes and clears any lock left on its disposable key. If the window is closed
+    or the process is killed, delete the lock-test/ prefix in the R2 dashboard.
 #>
 [CmdletBinding()]
 param(
     [ValidateRange(20, 600)]
-    [int]$HoldSeconds = 40
+    [int]$HoldSeconds = 40,
+
+    [ValidateRange(30, 1800)]
+    [int]$AcquireTimeoutSeconds = 180
 )
 
 $ErrorActionPreference = 'Stop'
@@ -91,6 +100,8 @@ foreach ($name in 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'CLOUDFLARE_API_
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 $results = [ordered]@{}
+$started = New-Object System.Collections.Generic.List[System.Diagnostics.Process]
+$initialized = $false
 
 function Invoke-Tf([string]$Name, [string[]]$Arguments, [switch]$NoWait) {
     $params = @{
@@ -103,8 +114,23 @@ function Invoke-Tf([string]$Name, [string[]]$Arguments, [switch]$NoWait) {
     }
     $process = Start-Process @params
     $null = $process.Handle  # Windows PowerShell 5.1 loses ExitCode unless the handle is cached.
-    if (-not $NoWait) { $process.WaitForExit() }
+    if ($NoWait) { $started.Add($process) } else { $process.WaitForExit() }
     return $process
+}
+# The data source writes the marker only after Terraform holds the state lock, so waiting for it
+# replaces a fixed delay.
+function Wait-LockHeld([System.Diagnostics.Process]$Process, [string]$Marker) {
+    $deadline = (Get-Date).AddSeconds($AcquireTimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Path $Marker) { return $true }
+        if ($Process.HasExited) { return $false }
+        Start-Sleep -Milliseconds 250
+    }
+    return $false
+}
+function Get-LockId([string]$Name) {
+    if ((Get-TfOutput $Name) -match '(?ms)Lock Info:.*?ID:\s+([0-9a-fA-F-]{36})') { return $Matches[1] }
+    return $null
 }
 function Get-TfOutput([string]$Name) {
     return ((Get-Content "$work\$Name.out.log", "$work\$Name.err.log" -Raw -ErrorAction SilentlyContinue) -join "`n")
@@ -142,9 +168,18 @@ variable "hold_seconds" {
   default = 0
 }
 
-# Holds the state lock for the plan's duration without creating any resource.
+variable "marker_path" {
+  type    = string
+  default = ""
+}
+
+# Runs during the plan, after the state lock is acquired: writes an optional marker, then holds the
+# lock for hold_seconds without creating any resource.
 data "external" "hold" {
-  program = ["powershell", "-NoProfile", "-Command", "Start-Sleep -Seconds ${var.hold_seconds}; '{}'"]
+  program = [
+    "powershell", "-NoProfile", "-Command",
+    "if ('${var.marker_path}') { New-Item -ItemType File -Force -Path '${var.marker_path}' | Out-Null }; Start-Sleep -Seconds ${var.hold_seconds}; '{}'",
+  ]
 }
 '@)
     [IO.File]::WriteAllText("$work\backend.hcl",
@@ -153,34 +188,39 @@ data "external" "hold" {
 
     Push-Location $work
     $plan = @('plan', '-refresh=false', '-input=false', '-no-color', '-lock-timeout=0s')
-    $settle = [Math]::Min(15, [int]($HoldSeconds / 2))
 
     $init = Invoke-Tf 'init' @('init', '-input=false', '-no-color', '-backend-config=backend.hcl')
     if (Set-Result 'init connects to the bucket' ($init.ExitCode -eq 0) 'init') {
+        $initialized = $true
         $first = Invoke-Tf 'first' $plan
         $null = Set-Result 'plan acquires and releases the lock' ($first.ExitCode -eq 0) 'first'
     }
 
     if ($results['plan acquires and releases the lock'] -eq 'PASS') {
-        $holder = Invoke-Tf 'holder' ($plan + "-var=hold_seconds=$HoldSeconds") -NoWait
-        Start-Sleep -Seconds $settle
-        $contender = Invoke-Tf 'contender' $plan
+        $holderMarker = (Join-Path $work 'holder.marker').Replace('\', '/')
+        $holder = Invoke-Tf 'holder' ($plan + "-var=hold_seconds=$HoldSeconds" + "-var=marker_path=$holderMarker") -NoWait
+        if (Wait-LockHeld $holder $holderMarker) {
+            $contender = Invoke-Tf 'contender' $plan
+            $refused = ($contender.ExitCode -ne 0) -and ((Get-TfOutput 'contender') -match 'Error acquiring the state lock')
+            $null = Set-Result 'second run refused while lock is held' $refused 'contender'
+        }
+        else {
+            $results['second run refused while lock is held'] = "FAIL: holder did not acquire the lock within $AcquireTimeoutSeconds seconds. $(Get-FailDetail 'holder')"
+        }
         $holder.WaitForExit()
-        $refused = ($contender.ExitCode -ne 0) -and ((Get-TfOutput 'contender') -match 'Error acquiring the state lock')
-        $null = Set-Result 'second run refused while lock is held' $refused 'contender'
         $null = Set-Result 'lock holder finishes normally' ($holder.ExitCode -eq 0) 'holder'
 
         $released = Invoke-Tf 'released' $plan
         $null = Set-Result 'lock is free after normal release' ($released.ExitCode -eq 0) 'released'
 
-        $victim = Invoke-Tf 'victim' ($plan + "-var=hold_seconds=$HoldSeconds") -NoWait
-        Start-Sleep -Seconds $settle
-        & taskkill.exe /T /F /PID $victim.Id | Out-Null
-        Start-Sleep -Seconds 3
+        $victimMarker = (Join-Path $work 'victim.marker').Replace('\', '/')
+        $victim = Invoke-Tf 'victim' ($plan + "-var=hold_seconds=$HoldSeconds" + "-var=marker_path=$victimMarker") -NoWait
+        $victimHeld = Wait-LockHeld $victim $victimMarker
+        & taskkill.exe /T /F /PID $victim.Id 2>$null | Out-Null
+        $victim.WaitForExit()
         $blocked = Invoke-Tf 'blocked' $plan
-        $lockId = $null
-        if ((Get-TfOutput 'blocked') -match '(?ms)Lock Info:.*?ID:\s+([0-9a-fA-F-]{36})') { $lockId = $Matches[1] }
-        if (Set-Result 'killed run leaves a stale lock' (($blocked.ExitCode -ne 0) -and $lockId) 'blocked') {
+        $lockId = Get-LockId 'blocked'
+        if (Set-Result 'killed run leaves a stale lock' ($victimHeld -and ($blocked.ExitCode -ne 0) -and $lockId) 'blocked') {
             $unlock = Invoke-Tf 'unlock' @('force-unlock', '-force', '-no-color', $lockId)
             $null = Set-Result 'force-unlock clears the stale lock' ($unlock.ExitCode -eq 0) 'unlock'
             $recovered = Invoke-Tf 'recovered' $plan
@@ -197,6 +237,22 @@ data "external" "hold" {
     $null = Set-Result 'no credential in output or .terraform' (-not ($leaked -contains $true)) $null
 }
 finally {
+    # Stop any Terraform run still in flight, then clear a lock it may have left on the disposable
+    # key, so an interrupted or failed test doesn't leave a .tflock object in the bucket.
+    foreach ($process in $started) {
+        if (-not $process.HasExited) {
+            & taskkill.exe /T /F /PID $process.Id 2>$null | Out-Null
+            $process.WaitForExit()
+        }
+    }
+    if ($initialized) {
+        $probe = Invoke-Tf 'cleanup-probe' $plan
+        $staleLockId = if ($probe.ExitCode -ne 0) { Get-LockId 'cleanup-probe' } else { $null }
+        if ($staleLockId) { $null = Invoke-Tf 'cleanup-unlock' @('force-unlock', '-force', '-no-color', $staleLockId) }
+        if ($probe.ExitCode -ne 0 -and -not $staleLockId) {
+            Write-Host 'WARNING: could not confirm the disposable lock is clear. Delete the lock-test/ prefix in the R2 dashboard.' -ForegroundColor Yellow
+        }
+    }
     Pop-Location -ErrorAction SilentlyContinue
     foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name], 'Process') }
     if (Test-Path $work) { Remove-Item -Recurse -Force $work }

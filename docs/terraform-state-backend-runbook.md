@@ -67,7 +67,14 @@ fixed time. The script then checks that:
 - a force-killed run leaves a stale lock, which `terraform force-unlock` clears
 - neither credential appears in any output or in `.terraform`
 
-A passing run prints `RESULT: PASS` and leaves no object in the bucket.
+Each lock holder writes a marker file once Terraform holds the lock, and the script waits for that
+marker instead of a fixed delay. On slow connections, raise `-AcquireTimeoutSeconds` (default 180).
+
+A passing run prints `RESULT: PASS` and leaves no object in the bucket. The script cleans up on any
+exit, including failure and Ctrl+C: it stops its Terraform processes and force-unlocks any lock left
+on its disposable key. If the window is closed or the process is killed before cleanup runs, a
+`.tflock` object can remain. Delete the `lock-test/` prefix on the bucket's **Objects** tab. Never
+delete objects under `state/`.
 
 If it fails, don't migrate state. Fix the reported problem, or evaluate ADR 0001's HCP Terraform
 fallback. When recording the result, give only the date, the Terraform version, and pass or fail.
