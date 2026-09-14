@@ -60,7 +60,7 @@ jobs:
 
       - name: Report compliance gaps
         run: |
-          if python scripts/check_compliance_gaps.py; then
+          if python -m scripts.check_compliance_gaps; then
             echo "Compliance gaps: none" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Compliance gaps detected. Run the audit locally for per-domain details." >> "$GITHUB_STEP_SUMMARY"
@@ -74,4 +74,4 @@ jobs:
         run: |
           trap 'rm -f service_account.json' EXIT
           echo "$GCP_SERVICE_ACCOUNT_KEY" > service_account.json
-          python scripts/aggregate_to_sheets.py
+          python -m scripts.aggregate_to_sheets
