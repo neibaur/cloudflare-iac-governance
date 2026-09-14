@@ -1,46 +1,83 @@
 # Terraform R2 State Backend Runbook
 
-Use this runbook only after the phase 2 acceptance test has been authorized. It prepares and tests
-a remote state backend; it does not migrate state or authorize `terraform apply`.
+This runbook covers four things for Terraform state in Cloudflare R2: setting up the bucket and
+credentials, initializing the backend, proving that locking works, and recovery. It does not migrate
+state or authorize `terraform apply`.
 
-Terraform 1.15.9 meets the S3 backend's Terraform 1.10 minimum for native lockfiles. The S3
-backend stores state at a bucket/key path, and `use_lockfile = true` enables its opt-in lockfile
-locking. It needs read, write, and delete access to the companion `.tflock` object.
+## How the backend fits together
+
+Terraform stores its state as one object in an R2 bucket and uses the S3 backend, because R2 is
+S3-compatible. With `use_lockfile = true`, Terraform writes a `.tflock` object next to the state
+before any operation and deletes it afterwards. A second run that finds the lock is refused. Native
+lockfiles need Terraform 1.10 or later, and this repository pins 1.15.
 ([HashiCorp S3 backend](https://developer.hashicorp.com/terraform/language/backend/s3))
 
-Cloudflare's R2 backend guidance requires `region = "auto"`, a path-style S3 endpoint, and the
-R2 compatibility flags committed in `terraform/backend.tf`. It also specifies a bucket-scoped R2
-API token with **Object Read & Write** permission.
+`terraform/backend.tf` commits only the R2 compatibility settings.
 ([Cloudflare R2 Terraform backend](https://developers.cloudflare.com/terraform/advanced-topics/remote-backend/))
+The bucket, the state key, and the account-specific endpoint come from an ignored `backend.hcl`.
+Credentials come only from environment variables.
 
-## Create the dedicated backend access
+## Create the bucket and credentials
 
-Create one dedicated R2 bucket for Terraform state. Do not share it with application data. Create
-two separate scoped R2 API credentials with **Object Read & Write** permission limited to that
-bucket: one for CI and one for the local operator. Cloudflare shows the secret access key only
-once, so store it immediately in the intended secret store; never place either credential in this
-repository.
+1. In the Cloudflare dashboard, open **R2 object storage** and create one dedicated bucket for
+   state:
+   - Location: **Automatic**. Don't select a jurisdiction, because that changes the endpoint.
+   - Storage class: **Standard**.
+   - Public access: off.
+2. Next to **API Tokens**, select **Manage**. Create two account API tokens with **Object Read &
+   Write** permission, each applied to that bucket only:
+   - `terraform-state-ci`, for GitHub Actions
+   - `terraform-state-operator`, for local work
 
-Store the CI credential as GitHub Actions secrets named:
+   Leave client IP filtering empty, because GitHub runner addresses change. Cloudflare shows the
+   secret access key only once, so store each key in a password manager immediately.
+3. Add the operator key and the bucket name to the ignored `.env` in the primary clone:
 
-- `TF_STATE_ACCESS_KEY_ID`
-- `TF_STATE_SECRET_ACCESS_KEY`
+   ```
+   TF_STATE_ACCESS_KEY_ID=<operator access key ID>
+   TF_STATE_SECRET_ACCESS_KEY=<operator secret access key>
+   TF_STATE_BUCKET=<state-bucket>
+   ```
 
-For local operator work, set the separate operator credential only in the current shell:
+   Also set `TF_STATE_ACCOUNT_ID` if the bucket belongs to a different account than
+   `CLOUDFLARE_ACCOUNT_ID`.
+4. The CI key becomes the GitHub secrets `TF_STATE_ACCESS_KEY_ID` and `TF_STATE_SECRET_ACCESS_KEY`.
+   Add them together with the workflow that first uses them, in a GitHub Environment restricted to
+   `main`.
+
+Never put either key in `backend.hcl`, command arguments, or any file in the repository. HashiCorp
+warns that backend credentials supplied through configuration or `-backend-config` can be written to
+`.terraform` and to plan files.
+
+## Prove locking works
+
+Run the acceptance test from the primary clone before the first state migration, and again after
+any change to `terraform/backend.tf` or the Terraform version:
 
 ```powershell
-$env:AWS_ACCESS_KEY_ID = "<operator-r2-access-key-id>"
-$env:AWS_SECRET_ACCESS_KEY = "<operator-r2-secret-access-key>"
+powershell -NoProfile -File .\scripts\test-r2-state-lock.ps1
 ```
 
-Do not put credentials in `backend.hcl`, command arguments, configuration, plan output, or logs.
-HashiCorp notes that backend credentials supplied in configuration or `-backend-config` can be
-written to `.terraform` and plan files. ([HashiCorp S3 backend](https://developer.hashicorp.com/terraform/language/backend/s3))
+The script reads the `.env` values without displaying them. It copies `terraform/backend.tf` into a
+temporary directory, uses a disposable key `lock-test/<random>/terraform.tfstate`, and never plans
+the repository's configuration or `ci.auto.tfvars`. A throwaway data source holds the lock for a
+fixed time. The script then checks that:
+- a second run is refused
+- the lock is released normally
+- a force-killed run leaves a stale lock, which `terraform force-unlock` clears
+- neither credential appears in any output or in `.terraform`
+
+A passing run prints `RESULT: PASS` and leaves no object in the bucket.
+
+If it fails, don't migrate state. Fix the reported problem, or evaluate ADR 0001's HCP Terraform
+fallback. When recording the result, give only the date, the Terraform version, and pass or fail.
+Terraform's lock errors include the bucket name, so don't paste raw output.
+
+The test passed with Terraform 1.15.0 on 2026-09-13.
 
 ## Initialize the remote backend
 
-Create the ignored `terraform/backend.hcl` locally. It contains only non-secret, account-specific
-backend values:
+Create the ignored `terraform/backend.hcl`. It holds only non-secret, account-specific values:
 
 ```hcl
 bucket = "<state-bucket>"
@@ -50,21 +87,25 @@ endpoints = {
 }
 ```
 
-From the repository root, initialize the partial backend explicitly:
+Load the operator key into the current shell only, then initialize from the repository root:
 
 ```powershell
+$env:AWS_ACCESS_KEY_ID = "<operator access key ID>"
+$env:AWS_SECRET_ACCESS_KEY = "<operator secret access key>"
+Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
 ```
 
-Do not run a migration or an apply during phase 2. The bucket name, state key, and endpoint are
-intentionally absent from committed Terraform configuration. They are supplied only by this
-ignored local file (or equivalent protected CI inputs).
+Removing `ci_backend_override.tf` first matters. If a mock gate run was interrupted and left the
+file behind, it keeps Terraform on the local backend.
+
+Don't run a migration or an apply until ADR 0001 phases 3 and 4 authorize one.
 
 ## Run the local mock gate safely
 
 The mock gate must never use `backend.hcl` or R2 credentials. It writes an ignored local-backend
-override, so it can use `ci.auto.tfvars` without contacting the remote backend. Run these commands
-from the repository root, after confirming no `terraform/terraform.tfstate*` file exists:
+override, so it can use `ci.auto.tfvars` without contacting R2. First confirm that no
+`terraform/terraform.tfstate*` file exists, then run from the repository root:
 
 ```powershell
 @'
@@ -80,77 +121,33 @@ terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.t
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 ```
 
-The final plan is expected to report `12 to add, 0 to destroy`. Removing the override restores
-the partial R2 backend configuration. Do not use `ci.auto.tfvars` after remote initialization, and
-do not run a mock plan against real state.
-
-## Lock acceptance test
-
-Perform this test in a separate disposable bucket or with a disposable key such as
-`lock-test/<random-run>/terraform.tfstate`. Never use the production state key or its lock object.
-Use the same partial backend configuration and a separate ignored `backend.hcl` with the disposable
-bucket/key. Export only the dedicated test credential as the two `AWS_*` environment variables.
-
-Initialize the disposable backend:
-
-```powershell
-terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
-```
-
-In two separate terminals, start the following command at the same time. The command is read-only;
-it neither applies infrastructure nor writes a state snapshot. Use `-lock-timeout=0s` so a failed
-second acquisition is immediately visible rather than waiting.
-
-```powershell
-terraform -chdir=terraform plan -refresh=false -input=false -lock-timeout=0s "-var-file=ci.auto.tfvars"
-```
-
-Repeat the simultaneous start until one terminal reports that it could not acquire the state lock.
-The other must finish normally. Record only the test date, Terraform version, disposable test
-identifier, success/failure result, and whether credentials were absent from visible output; do not
-retain bucket names, account identifiers, lock contents, or credential values in shared evidence.
-
-For a normal-unlock check, run the command once more after the successful holder exits. It must
-acquire and release the lock normally.
-
-For stale-lock recovery, begin the same disposable-key plan and interrupt its process only after it
-has announced that it acquired the lock. Do not interrupt a production command. Start another
-disposable-key plan with `-lock-timeout=0s`; Terraform reports the stale lock information including
-its lock ID. Privately copy only that lock ID into this command:
-
-```powershell
-terraform -chdir=terraform force-unlock <lock-id>
-```
-
-Confirm the next disposable-key plan acquires the lock and completes. `force-unlock` operates on
-remote state locking, so use it only after verifying the named lock belongs to the interrupted
-disposable test. Do not run it against the production key. Record that recovery succeeded without
-recording the lock ID or other identities.
-
-If the concurrent or stale-lock checks fail, stop before state migration and evaluate the ADR's HCP
-Terraform fallback. Cloudflare documents the R2 S3 compatibility needed by the backend, but the
-end-to-end lock behavior remains an operator acceptance test.
+The plan is expected to report `12 to add, 0 to destroy`. Always run the full sequence. After a
+remote initialization, a standalone `terraform plan` with `ci.auto.tfvars` would run against the
+real remote state.
 
 ## State recovery
 
-Do not edit a Terraform state file manually. R2's current Terraform-backend documentation does not
-establish object versioning as a recovery feature, so treat it as unavailable unless the operator
-verifies current official documentation for the chosen bucket.
+Never edit a Terraform state file manually.
 
-The recommended recovery design is a scheduled copy of the live state object to a `backups/`
-prefix, using a new object key for every copy. Protect that backup prefix with an R2 bucket lock
-rule and configure lifecycle expiry for the retention period the operator selects. This protects
-backup copies from accidental deletion or overwrite until their retention expires. It does not
-protect the live state key from corruption between copies, and it must not cover the live state key
-or its `.tflock`, because Terraform overwrites those objects during normal operation.
+R2 does not document S3 object versioning, so recovery relies on locked backup copies:
+- **Backups:** before any state-writing operation, copy the live state object to
+  `backups/<UTC timestamp>.tfstate`. Every copy gets a new key.
+- **Bucket lock rule:** on the bucket's **Settings** tab, a rule on the `backups/` prefix with a
+  30-day retention stops any backup being deleted or overwritten for 30 days. That includes deletion
+  with a leaked key.
+- **Lifecycle rule:** a rule on `backups/` deletes copies after 90 days. The lifecycle expiry must
+  be longer than the lock retention.
 
-If future R2 object versioning becomes available and is verified for this use, it can protect prior
-versions of the same live object. Bucket lock/retention protects the locked backup objects from
-deletion and overwrite. Scheduled copies create independently named recovery points. The operator
-chooses the final recovery control and retention period after the lock test. Restore only through a
-reviewed Terraform/R2 recovery procedure, never by manually editing state.
+Never apply a bucket lock rule to `state/` or to the whole bucket. Terraform overwrites the live
+state and deletes its `.tflock` during normal operation, and a lock would block both.
+
+Configure the two rules when the first state-writing workflow adds the backup step. Restore by
+copying a chosen backup over the live key through a reviewed procedure, then running a refresh plan
+to confirm the result.
 
 ## Sources
 
 - [HashiCorp: S3 backend](https://developer.hashicorp.com/terraform/language/backend/s3)
 - [Cloudflare: Remote R2 backend](https://developers.cloudflare.com/terraform/advanced-topics/remote-backend/)
+- [Cloudflare: R2 API tokens](https://developers.cloudflare.com/r2/api/tokens/)
+- [Cloudflare: R2 bucket locks](https://developers.cloudflare.com/r2/buckets/bucket-locks/)

@@ -70,9 +70,9 @@ Cons:
   which satisfies that minimum. The 1.10 release is the first release whose S3 backend exposes
   this behavior ([Terraform 1.10 release](https://github.com/hashicorp/terraform/releases/tag/v1.10.0),
   [S3 lock configuration](https://developer.hashicorp.com/terraform/language/backend/s3)).
-- Cloudflare's backend example does not currently demonstrate `use_lockfile`, bucket versioning, or
-  a concurrent lock test. Compatibility follows from the documented S3 operations, but the exact
-  Terraform/R2 combination still needs an acceptance test before state migration.
+- Cloudflare's backend example does not demonstrate `use_lockfile`, bucket versioning, or a
+  concurrent lock test, and R2 does not document object versioning. Lock compatibility therefore
+  rests on the repository's own acceptance test, and recovery needs a backup design.
 - The operator must create and secure the bucket and two narrowly scoped R2 credentials. Backend
   credentials must come from environment variables or a partial backend configuration because
   HashiCorp warns that hard-coded or command-line backend secrets can be copied into `.terraform`
@@ -128,21 +128,23 @@ organization-wide policy library, but not for this narrow action/type/count gate
 
 ## Decision
 
-Cloudflare R2 through the S3 backend is the chosen backend, contingent on the phase 2 concurrent-lock
-acceptance test; HCP Terraform is the fallback if that test fails. The pinned Terraform 1.15.9
-satisfies the 1.10 minimum for the S3 backend lockfile. Enable `use_lockfile = true`; configure the
-documented R2 endpoint and compatibility flags; provide credentials only through environment
-variables or ephemeral runner files; and restrict object permissions to the state key and its
-`.tflock` companion. The committed partial backend has no bucket, key, or endpoint, so the mock
-gate uses an ignored local-backend override and cannot contact R2. Operators supply those
-non-secret values through ignored backend configuration for an explicit remote initialization.
+Cloudflare R2 through the S3 backend is the chosen backend. The phase 2 lock acceptance test passed
+against the operator's bucket on 2026-09-13 with Terraform 1.15.0: a concurrent run was refused, a
+normal release freed the lock, a force-killed run's stale lock was cleared with `force-unlock`, and
+no credential appeared in output or `.terraform`. The pinned Terraform 1.15 satisfies the 1.10
+minimum for the S3 backend lockfile. Enable `use_lockfile = true`; configure the documented R2
+endpoint and compatibility flags; provide credentials only through environment variables or
+ephemeral runner files; and restrict credentials to the state bucket. The committed partial backend
+has no bucket, key, or endpoint, so the mock gate uses an ignored local-backend override and cannot
+contact R2. Operators supply those non-secret values through an ignored `backend.hcl` for an
+explicit remote initialization.
 
-Use a backup prefix protected by an R2 bucket lock rule and lifecycle expiry as the recommended
-recovery design. Each backup must use a new object key. A bucket lock rule must not cover the live
-state key or its `.tflock`, which Terraform overwrites. R2 object versioning remains unavailable
-unless the operator verifies current official support; the final recovery selection remains open.
+R2 does not document object versioning, so state recovery uses locked backup copies. Before any
+state-writing operation, copy the live state to a new key under `backups/`. An R2 bucket lock rule on
+`backups/` retains each copy for 30 days, and a lifecycle rule expires copies after 90 days. No lock
+rule covers the live state key or its `.tflock`, which Terraform overwrites and deletes.
 
-HCP Terraform is the fallback if the R2 concurrency test fails. Its 500-resource Free limit does
+HCP Terraform is the fallback if a later lock acceptance run fails. Its 500-resource Free limit does
 not fit the expected state.
 
 Keep an explicit zone inventory for initial adoption. Split it from the policy standard and retain
@@ -281,8 +283,9 @@ Each phase is one reviewable pull request and must pass the repository quality g
    1.10 lockfile minimum, add partial R2 S3 backend configuration, document recovery, and add a disposable-backend
    lock test procedure. Acceptance: two concurrent holders cannot acquire the same test lock, stale
    lock recovery is demonstrated, and no credential appears in configuration or logs. The operator
-   creates the R2 bucket, selects and configures a recovery design, creates scoped backend
-   credentials, and adds the named secrets.
+   creates the R2 bucket and scoped backend credentials, selects the recovery design, and runs
+   `scripts/test-r2-state-lock.ps1`. The named GitHub secrets are added with the first workflow
+   that uses them.
 3. **Inventory and generated imports.** Separate inventory from standard values and add root-module
    `for_each` import blocks for all five setting resources and bot management per zone. Acceptance:
    a saved plan against remote state reports exactly the expected imports and zero create, update,
@@ -316,11 +319,6 @@ Each phase is one reviewable pull request and must pass the repository quality g
 
 ## Open questions
 
-- Which R2 object-versioning or retention feature provides tested state recovery, and what retention
-  period is appropriate? The official Terraform/R2 backend page does not verify this.
-- Does Terraform 1.10's native S3 lock pass concurrent acquisition, unlock, interrupted-run, and
-  recovery tests against the operator's R2 bucket with the documented compatibility flags? The API
-  primitives are documented, but end-to-end support is not explicitly guaranteed by Cloudflare.
 - What is the measured request count and duration of a full refresh of approximately 576 resources,
   including provider retries and other token users? Until measured, one plan fitting inside the
   1,200-per-five-minute limit is unverified.

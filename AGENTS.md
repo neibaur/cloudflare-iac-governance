@@ -113,6 +113,8 @@ detect-secrets audit .secrets.baseline
 - Never run `terraform apply` in pull request workflows.
 - The mock validation gate writes an ignored `ci_backend_override.tf` that selects the local backend. It first runs `terraform init -backend=false`, validates and tests, then runs `terraform init -reconfigure` before the mock plan. This gate never contacts R2; remove the override after the plan.
 - Operators initialize R2 explicitly with `terraform init -reconfigure -backend-config=backend.hcl`, where `backend.hcl` is ignored and contains only bucket, key, and endpoint values. Credentials must be environment variables, never backend configuration.
+- After a remote initialization, never run a standalone `terraform plan` with `ci.auto.tfvars`: it would plan mock inputs against the real remote state. Run the full mock gate, which re-initializes to the local backend first.
+- Worker agents never initialize the remote backend or run `scripts/test-r2-state-lock.ps1`. Both need operator credentials and run in the primary clone, by the operator or at the operator's explicit request. See `docs/terraform-state-backend-runbook.md`.
 - Use `-refresh=false` for PR/local mock-value plans when local state or credentials may exist.
 - Use only mock CI values from `terraform/ci.auto.tfvars` for PR validation.
 - Use real values only through GitHub Secrets or a local ignored `terraform/terraform.tfvars`.

@@ -14,10 +14,10 @@ Describe the change and why it is needed.
 
 - [ ] python scripts/run_all_checks.py
 - [ ] terraform -chdir=terraform fmt -check -recursive
-- [ ] terraform -chdir=terraform init -backend=false
+- [ ] `terraform/ci_backend_override.tf` written, then terraform -chdir=terraform init -backend=false
 - [ ] terraform -chdir=terraform validate
 - [ ] terraform -chdir=terraform test
-- [ ] No `terraform/*.tfstate*` present, then terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+- [ ] No `terraform/*.tfstate*` present, then terraform -chdir=terraform init -reconfigure and terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
 ## Terraform safety checklist
 
