@@ -18,8 +18,9 @@
       6. neither credential value appears in any output or in the .terraform directory
       7. cleanup confirms no lock remains on the disposable key
 
-    Only PASS or FAIL lines are printed. Credential values, the bucket name, and the account ID are
-    redacted from failure details.
+    The script prints worktree-refusal and configuration-failure lines, a run ID, the Terraform
+    version, PASS or redacted FAIL result lines, a cleanup warning when needed, and a final RESULT
+    line. Credential values, the bucket name, and the account ID never appear.
 
     The script reads these values from the repository's .env file and never displays them:
 
@@ -100,12 +101,17 @@ $runId = [guid]::NewGuid().ToString('N').Substring(0, 12)
 # Printed first so the operator knows which prefix to clean up if the process is killed.
 Write-Output "Run ID: $runId (disposable key lock-test/$runId/terraform.tfstate)"
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "r2-lock-test-$runId"
-$savedEnv = @{}
 # TF_DATA_DIR, TF_WORKSPACE, and TF_CLI_ARGS* are cleared too: inherited values could send init or plan to
 # another checkout's .terraform directory or inject arguments.
-$terraformEnv = @('TF_DATA_DIR', 'TF_WORKSPACE', 'TF_CLI_ARGS', 'TF_CLI_ARGS_init', 'TF_CLI_ARGS_plan')
-foreach ($name in @('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') + $terraformEnv) {
-    $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+$terraformEnv = @('TF_DATA_DIR', 'TF_WORKSPACE') + @(
+    [Environment]::GetEnvironmentVariables('Process').Keys |
+        Where-Object { $_ -match '^TF_CLI_ARGS(?:_.*)?$' }
+)
+$savedEnv = foreach ($name in @('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') + $terraformEnv) {
+    [pscustomobject]@{
+        Name  = $name
+        Value = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
 }
 $results = [ordered]@{}
 $started = New-Object System.Collections.Generic.List[System.Diagnostics.Process]
@@ -171,7 +177,7 @@ try {
     $env:TF_IN_AUTOMATION = '1'
     # An inherited AWS session token would be sent with the R2 keys and fail authentication.
     Remove-Item Env:AWS_SESSION_TOKEN, Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
-    foreach ($name in $terraformEnv) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
+    foreach ($name in $terraformEnv) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
 
     New-Item -ItemType Directory $work | Out-Null
     Copy-Item (Join-Path $RepoRoot 'terraform\backend.tf') "$work\backend.tf"
@@ -282,7 +288,9 @@ finally {
         $null = Set-Result 'no credential in output or .terraform' (-not ($leaked -contains $true)) $null
     }
     if ($pushed) { Pop-Location }
-    foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name], 'Process') }
+    foreach ($environment in $savedEnv) {
+        [Environment]::SetEnvironmentVariable($environment.Name, $environment.Value, 'Process')
+    }
     if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 }
 
