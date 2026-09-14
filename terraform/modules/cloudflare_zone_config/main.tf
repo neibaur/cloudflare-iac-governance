@@ -30,6 +30,18 @@ locals {
     for key, control in module.security_control_catalog.managed_controls : key => control
     if control.resource == "cloudflare_bot_management"
   }
+
+  # Controls the filters above would silently skip: an unsupported resource type, a zone setting
+  # without a setting ID, or bot management with one. Mirrors validate_controls in
+  # scripts/security_standard.py.
+  unsupported_controls = [
+    for key, control in module.security_control_catalog.managed_controls : key
+    if !(
+      (control.resource == "cloudflare_zone_setting" && control.setting_id != "") ||
+      (control.resource == "cloudflare_bot_management" && control.setting_id == "")
+    )
+  ]
+  zone_setting_ids = [for control in values(local.zone_setting_controls) : control.setting_id]
 }
 
 # Resource addresses are keyed by setting ID; outputs are keyed by policy control key.

@@ -33,7 +33,11 @@ Change the standard only in this file, through a reviewed pull request.
   - If the catalog lists a control that `terraform/main.tf` or the zone module doesn't wire, every
     plan with at least one domain fails. A plan with no domains manages no resources, so it doesn't
     evaluate that wiring.
-  - `terraform test` plans with domains, so it catches both, and CI fails before the change merges.
+  - If a catalog entry uses an unsupported `resource`, a zone setting has no `setting_id`, bot
+    management has one, or two zone settings share a `setting_id`, every plan with at least one
+    domain fails. The audit's policy validation also rejects these shapes.
+  - `terraform test` plans with domains, so it catches all of these, and CI fails before the change
+    merges.
 - **A new control adds a report column.** The audit CSV gains the column. The first Google Sheets
   sync afterwards appends it to the right of the existing `history` worksheet header, so existing
   columns keep their positions. BI data sources may need a field refresh to show it.

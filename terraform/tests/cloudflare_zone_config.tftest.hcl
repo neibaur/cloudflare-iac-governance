@@ -137,3 +137,43 @@ run "zone_config_outputs_are_keyed_by_control_key" {
     error_message = "The managed_controls output must be keyed by policy control key and read the setting ID from the resource."
   }
 }
+
+run "zone_config_rejects_unsupported_catalog_resource" {
+  command = plan
+
+  module {
+    source = "./modules/cloudflare_zone_config"
+  }
+
+  variables {
+    zone_id                 = "023e105f4ecef8ad9ca31a8372d0c353"
+    zone_name               = "example.com"
+    ssl                     = "full"
+    security_level          = "medium"
+    always_use_https        = "on"
+    min_tls_version         = "1.2"
+    browser_integrity_check = "on"
+    bot_fight_mode          = "on"
+  }
+
+  # Without the precondition, the typo'd resource type would be filtered out and silently unmanaged.
+  override_module {
+    target = module.security_control_catalog
+    outputs = {
+      managed_controls = {
+        ssl = {
+          resource   = "cloudflare_zone_settings"
+          setting_id = "ssl"
+        }
+        bot_fight_mode = {
+          resource   = "cloudflare_bot_management"
+          setting_id = ""
+        }
+      }
+    }
+  }
+
+  expect_failures = [
+    output.managed_controls,
+  ]
+}
