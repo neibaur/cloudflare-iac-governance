@@ -48,6 +48,14 @@ output "security_standard" {
     error_message = "policy/zone-security-standard.json has an unsupported schema_version."
   }
 
+  # Checks that span variables live here rather than in variable validations, which only reference
+  # their own variable: a cross-variable validation fails to evaluate when the other variable is
+  # left at its default.
+  precondition {
+    condition     = alltrue([for domain_name in keys(var.security_overrides) : contains(keys(var.domains), domain_name)])
+    error_message = "Every security_overrides key must identify a domain in var.domains."
+  }
+
   precondition {
     condition = alltrue(flatten([
       for override_set in values(var.security_overrides) : [

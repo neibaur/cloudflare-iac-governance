@@ -315,7 +315,7 @@ run "override_for_unknown_domain_is_rejected" {
   }
 
   expect_failures = [
-    var.domains,
+    output.security_standard,
   ]
 }
 

@@ -29,18 +29,14 @@ variable "domains" {
     condition     = length(distinct([for domain in values(var.domains) : lookup(domain, "zone_id", "")])) == length(var.domains)
     error_message = "Every inventory zone_id must be unique."
   }
-
-  validation {
-    condition     = alltrue([for domain_name in keys(var.security_overrides) : contains(keys(var.domains), domain_name)])
-    error_message = "Every security_overrides key must identify a domain in var.domains."
-  }
 }
 
 variable "security_overrides" {
   description = "Optional per-domain security posture overrides, keyed by a domain in var.domains."
   # A map rather than an object type: Terraform silently discards undeclared object attributes, so a
-  # misspelled override field would be ignored without an error. A precondition on the
-  # security_standard output in terraform/main.tf checks field names against its override table.
+  # misspelled override field would be ignored without an error. Preconditions on the
+  # security_standard output in terraform/main.tf check each domain key against var.domains and each
+  # field name against the override table there.
   type    = map(map(string))
   default = {}
 

@@ -29,10 +29,13 @@ phase 3 does not authorize applying it.
    `-var-file=terraform.tfvars` is required. Terraform loads `ci.auto.tfvars` automatically after
    `terraform.tfvars`, so without it the mock inventory replaces the real one.
 
-5. Accept the plan only when its summary reports exactly one import per zone setting in
-   `policy/zone-security-standard.json` plus one bot management import, for every inventory zone
-   (6 per zone with the current policy), and `0 to add, 0 to change, 0 to destroy`. Read only the aggregate counts; do not copy domain
-   names or zone IDs into tickets, logs, or review material.
+5. Accept the plan only when the command exits 0 with no `Error:` output, and its summary reports
+   exactly one import per zone setting in `policy/zone-security-standard.json` plus one bot
+   management import, for every inventory zone (6 per zone with the current policy), and `0 to add,
+   0 to change, 0 to destroy`. Read only the aggregate counts; do not copy domain names or zone IDs
+   into tickets, logs, or review material. A failed validation or precondition still prints a plan
+   summary and writes the plan file, so the exit code, not the summary, decides whether the plan
+   succeeded.
 
 6. An update in this plan means the live zone differs from the configuration. It is not an import
    failure, and it is never applied as part of this phase. Resolve it according to its source:
