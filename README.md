@@ -101,6 +101,8 @@ against a local backend, so it never contacts R2. It refuses to run when Terrafo
 stops at the first failure.
 For the R2 state-backend setup and its separate operator commands, see the
 [Terraform state backend runbook](docs/terraform-state-backend-runbook.md).
+To prove the generated zone imports against remote state before adoption, see the
+[Terraform import acceptance runbook](docs/terraform-import-acceptance-runbook.md).
 
 `.secrets.baseline` is kept for local detect-secrets pre-flight checks.
 Gitleaks runs in GitHub Actions as the CI/CD history-scanning enforcement gate.
