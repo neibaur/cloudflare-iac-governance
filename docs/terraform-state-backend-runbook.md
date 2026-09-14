@@ -156,9 +156,12 @@ R2 does not document S3 object versioning, so recovery relies on locked backup c
 - **Backups:** before any state-writing operation, copy the live state object to
   `backups/<UTC timestamp>-<random suffix>.tfstate`. The random suffix guarantees a new key even
   for two copies in the same second, because the bucket lock rejects overwriting an existing backup.
-  The copy must run inside the same serialization boundary as the state write it protects: after
-  Terraform's `.tflock` is held or in the same serialized GitHub Actions job and concurrency group
-  as the apply.
+  The copy must run inside the same serialization boundary as the state write it protects.
+  Terraform holds `.tflock` only while its own command runs, so the check for a live state object,
+  the copy, and the state write run in the same serialized GitHub Actions job and concurrency
+  group. Before a state write outside that workflow, disable every workflow that uses the state.
+  When no live state object exists, as before the first adoption, skip the copy and record that no
+  backup was taken.
 - **Bucket lock rule:** on the bucket's **Settings** tab, a rule on the `backups/` prefix with a
   90-day retention stops any backup being deleted or overwritten for 90 days. A bucket-scoped key
   can read and write `backups/`, so only the lock protects a backup from deletion with a leaked key;
@@ -170,7 +173,8 @@ R2 does not document S3 object versioning, so recovery relies on locked backup c
 Never apply a bucket lock rule to `state/` or to the whole bucket. Terraform overwrites the live
 state and deletes its `.tflock` during normal operation, and a lock would block both.
 
-Configure the two rules when the first state-writing workflow adds the backup step.
+Configure both rules before the first state-writing workflow runs, including the first adoption,
+which has no state to back up yet.
 
 A restore copies an object directly over the live key, which bypasses Terraform's lock. Use a
 reviewed procedure that follows these steps:
@@ -178,8 +182,10 @@ reviewed procedure that follows these steps:
    it.
 2. Confirm that no `state/terraform.tfstate.tflock` object exists. If one does, find out which run
    holds it before going further.
-3. Copy the chosen backup over `state/terraform.tfstate`.
-4. Run a refresh plan to confirm the result, then re-enable the workflows.
+3. Back up the current `state/terraform.tfstate` under `backups/` as described above, so the restore
+   can itself be undone.
+4. Copy the chosen backup over `state/terraform.tfstate`.
+5. Run a refresh plan to confirm the result, then re-enable the workflows.
 
 ## Sources
 
