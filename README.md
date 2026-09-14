@@ -93,13 +93,14 @@ available.
 
 ```powershell
 .venv\Scripts\python scripts/run_all_checks.py
-terraform -chdir=terraform fmt -check -recursive
-terraform -chdir=terraform init -backend=false
-terraform -chdir=terraform validate
-terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+.\scripts\run-terraform-mock-gate.ps1
 ```
 
-Only run the `ci.auto.tfvars` plan in a safe mock-state/no-real-state context.
+`scripts/run-terraform-mock-gate.ps1` runs `fmt`, `validate`, `test`, and the `ci.auto.tfvars` plan
+against a local backend, so it never contacts R2. It refuses to run when Terraform state exists and
+stops at the first failure.
+For the R2 state-backend setup and its separate operator commands, see the
+[Terraform state backend runbook](docs/terraform-state-backend-runbook.md).
 
 `.secrets.baseline` is kept for local detect-secrets pre-flight checks.
 Gitleaks runs in GitHub Actions as the CI/CD history-scanning enforcement gate.

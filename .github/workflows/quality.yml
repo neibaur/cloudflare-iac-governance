@@ -45,24 +45,8 @@ jobs:
       - name: Run Python quality gate
         run: python scripts/run_all_checks.py
 
-      - name: Check Terraform formatting
-        run: terraform -chdir=terraform fmt -check -recursive
-
-      - name: Initialize Terraform without backend
-        run: terraform -chdir=terraform init -backend=false
-
-      - name: Validate Terraform
-        run: terraform -chdir=terraform validate
-
-      - name: Test Terraform
-        run: terraform -chdir=terraform test
-
-      - name: Refuse mock plan when Terraform state is present
-        run: |
-          if compgen -G "terraform/*.tfstate*" > /dev/null; then
-            echo "::error::Terraform state found in checkout; mock inputs must never be planned against real state."
-            exit 1
-          fi
-
-      - name: Plan Terraform with mock CI values
-        run: terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+      # The same script operators and workers run locally: fmt, validate, test, and the mock plan
+      # against a local backend, refusing when Terraform state is present.
+      - name: Run Terraform mock gate
+        shell: pwsh
+        run: ./scripts/run-terraform-mock-gate.ps1

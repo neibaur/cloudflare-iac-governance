@@ -79,12 +79,12 @@ Run the lightweight local quality gate before proposing a change is complete:
 python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python scripts/run_all_checks.py
-terraform -chdir=terraform fmt -check -recursive
-terraform -chdir=terraform init -backend=false
-terraform -chdir=terraform validate
-terraform -chdir=terraform test
-terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+.\scripts\run-terraform-mock-gate.ps1
 ```
+
+`scripts/run-terraform-mock-gate.ps1` runs `terraform fmt -check`, `init -backend=false`, `validate`,
+`test`, `init -reconfigure`, and the `ci.auto.tfvars` plan. It stops at the first failure, exits 1,
+and always removes the local-backend override it writes. CI's `Quality` workflow runs the same script.
 
 The mock-value plan runs only in CI or a worktree checkout that has no Terraform state. Before
 running it, check for `terraform/terraform.tfstate*`. If any matching file exists, skip the plan
@@ -104,7 +104,10 @@ detect-secrets audit .secrets.baseline
 ## Terraform Safety Rules
 
 - Never run `terraform apply` in pull request workflows.
-- Default validation is `terraform fmt -check -recursive`, `terraform init -backend=false`, `terraform validate`, and a safe-input `terraform plan`.
+- The mock validation gate (`scripts/run-terraform-mock-gate.ps1`) writes an ignored `ci_backend_override.tf` that selects the local backend, so it never contacts R2. It refuses to run when `terraform/terraform.tfstate*` exists, and it removes the override on every exit.
+- Operators initialize R2 explicitly with `terraform init -reconfigure -backend-config=backend.hcl`, where `backend.hcl` is ignored and contains only bucket, key, and endpoint values. Credentials must be environment variables, never backend configuration.
+- After a remote initialization, never run a standalone `terraform plan` with `ci.auto.tfvars`: it would plan mock inputs against the real remote state. Run `scripts/run-terraform-mock-gate.ps1`, which re-initializes to the local backend first.
+- Worker agents never initialize the remote backend or run `scripts/test-r2-state-lock.ps1`. Both need operator credentials and run in the primary clone, by the operator or at the operator's explicit request. See `docs/terraform-state-backend-runbook.md`.
 - Use `-refresh=false` for PR/local mock-value plans when local state or credentials may exist.
 - Use only mock CI values from `terraform/ci.auto.tfvars` for PR validation.
 - Use real values only through GitHub Secrets or a local ignored `terraform/terraform.tfvars`.

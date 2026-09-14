@@ -242,7 +242,8 @@ python run_tools.py --verify
 python run_tools.py --audit
 ```
 
-The bootstrap prefers `.env.agent` and warns if it would fall back to `.env`.
+The bootstrap prefers `.env.agent` and warns if it would fall back to `.env`. From either file it
+copies only `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` into the worktree `.env`.
 Treat that warning as a stop sign: an edit-capable local token must not silently
 enter a worktree.
 
