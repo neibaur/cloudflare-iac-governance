@@ -9,6 +9,7 @@ from urllib.parse import quote
 
 import httpx
 
+from scripts.aggregate_to_sheets import RESERVED_REPORT_COLUMNS
 from scripts.security_standard import (
     BOT_MANAGEMENT_RESOURCE,
     ZONE_SETTING_RESOURCE,
@@ -32,11 +33,11 @@ def csv_column(control: SecurityControl) -> str:
 def security_csv_headers(controls: tuple[SecurityControl, ...]) -> tuple[str, ...]:
     """Return report headers for the configured controls, preserving the legacy column order."""
     columns = [csv_column(control) for control in controls]
-    reserved = {"domain_name", "zone_id", "is_compliant"}
+    reserved = {"domain_name", "zone_id", "is_compliant", *RESERVED_REPORT_COLUMNS}
     if len(set(columns)) != len(columns) or reserved.intersection(columns):
         raise ValueError(
             "Security controls must map to unique CSV columns that do not reuse "
-            "domain_name, zone_id, or is_compliant."
+            f"{', '.join(sorted(reserved))}."
         )
     legacy = [column for column in LEGACY_CONTROL_COLUMNS if column in columns]
     additional = [column for column in columns if column not in LEGACY_CONTROL_COLUMNS]

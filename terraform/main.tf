@@ -15,6 +15,10 @@ locals {
   }
 }
 
+module "security_control_catalog" {
+  source = "./modules/security_control_catalog"
+}
+
 output "security_standard" {
   description = "Expected value for each control in policy/zone-security-standard.json. Contains no zone identities."
   value       = local.security_standard
@@ -25,13 +29,7 @@ output "security_standard" {
   }
 
   precondition {
-    # The conditional makes the empty-domain guard explicit: with no domains, no module instance is
-    # indexed. The empty_domain_map_plans test covers this case.
-    condition = (
-      length(module.cloudflare_zone_config) == 0
-      ? true
-      : jsonencode(values(module.cloudflare_zone_config)[0].managed_controls) == jsonencode(local.policy_controls)
-    )
+    condition     = jsonencode(module.security_control_catalog.managed_controls) == jsonencode(local.policy_controls)
     error_message = "The policy's controls, resources, or setting IDs do not match what terraform/main.tf and the zone module manage. Wire the policy change into Terraform."
   }
 }

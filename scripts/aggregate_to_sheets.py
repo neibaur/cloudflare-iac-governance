@@ -15,10 +15,12 @@ MAIN_SHEET_NAME = "Cloudflare_Compliance_Main"
 GOOGLE_SHEET_ID_ENV = "GOOGLE_SHEET_ID"
 LATEST_WORKSHEET_TITLE = "latest"
 HISTORY_WORKSHEET_TITLE = "history"
+AUDIT_DATE_COLUMN = "audit_date"
 REPORT_PATTERN = re.compile(r"^(?P<audit_date>\d{8}T\d{6}Z)_security_compliance_report\.csv$")
 LATEST_REPORT_NAME = "security_compliance_report.csv"
 SENSITIVE_COLUMNS = ("zone_id",)
 INTERNAL_COLUMNS = ("__source_file", "__is_latest_snapshot")
+RESERVED_REPORT_COLUMNS = (AUDIT_DATE_COLUMN, *INTERNAL_COLUMNS)
 
 
 def discover_audit_reports(reports_dir: Path = REPORTS_DIR) -> list[Path]:

@@ -24,13 +24,13 @@ run "standard_is_read_from_policy_file" {
   }
 }
 
-run "module_manages_exactly_the_policy_controls" {
+run "catalog_manages_exactly_the_policy_controls" {
   command = plan
 
-  # Compares the policy with what the module derives from its own resources, so a control, resource,
-  # or setting ID added to the policy fails here until Terraform actually manages it.
+  # The zone module uses this catalog for its zone-setting resources, so a control, resource, or
+  # setting ID added to the policy fails until Terraform actually manages it.
   assert {
-    condition = jsonencode(module.cloudflare_zone_config["standard.example"].managed_controls) == jsonencode({
+    condition = jsonencode(module.security_control_catalog.managed_controls) == jsonencode({
       for control in jsondecode(file("${path.module}/../policy/zone-security-standard.json")).controls :
       control.key => {
         resource   = control.resource
@@ -39,6 +39,25 @@ run "module_manages_exactly_the_policy_controls" {
     })
     error_message = "The zone module must manage exactly the controls, resources, and setting IDs in the policy file."
   }
+}
+
+run "empty_domain_map_rejects_policy_catalog_mismatch" {
+  command = plan
+
+  variables {
+    domains = {}
+  }
+
+  override_module {
+    target = module.security_control_catalog
+    outputs = {
+      managed_controls = {}
+    }
+  }
+
+  expect_failures = [
+    output.security_standard,
+  ]
 }
 
 run "defaults_come_from_policy" {
