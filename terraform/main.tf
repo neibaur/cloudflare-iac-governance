@@ -49,6 +49,15 @@ output "security_standard" {
   }
 
   precondition {
+    condition = alltrue(flatten([
+      for override_set in values(var.security_overrides) : [
+        for field in keys(override_set) : contains(values(local.override_fields), field)
+      ]
+    ]))
+    error_message = "Every security_overrides field must be one of: always_use_https, bot_fight_mode, browser_integrity_check, min_tls_version, security_level, ssl."
+  }
+
+  precondition {
     condition     = jsonencode(module.security_control_catalog.managed_controls) == jsonencode(local.policy_controls)
     error_message = "The policy's controls, resources, or setting IDs do not match terraform/modules/security_control_catalog. Wire the policy change into the catalog, terraform/main.tf, and the zone module."
   }

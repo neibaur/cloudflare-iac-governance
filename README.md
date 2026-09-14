@@ -179,7 +179,10 @@ python run_tools.py --list
 
 The command prints HCL for the Terraform `domains` inventory variable. It remains valid as-is;
 optional posture exceptions belong in a separate `security_overrides` map. A `domains` entry
-holds only `zone_id`, each zone ID must be unique, and a plan fails if either rule is broken:
+holds only `zone_id`, and each zone ID must be unique. A `security_overrides` entry sets one or
+more of `always_use_https`, `bot_fight_mode`, `browser_integrity_check`, `min_tls_version`,
+`security_level`, and `ssl`. A plan fails if any of these rules is broken, including for a
+misspelled override field:
 
 ```hcl
 domains = {

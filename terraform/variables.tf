@@ -38,37 +38,23 @@ variable "domains" {
 
 variable "security_overrides" {
   description = "Optional per-domain security posture overrides, keyed by a domain in var.domains."
-  type = map(object({
-    ssl                     = optional(string)
-    security_level          = optional(string)
-    always_use_https        = optional(string)
-    min_tls_version         = optional(string)
-    browser_integrity_check = optional(string)
-    bot_fight_mode          = optional(string)
-  }))
+  # A map rather than an object type: Terraform silently discards undeclared object attributes, so a
+  # misspelled override field would be ignored without an error. A precondition on the
+  # security_standard output in terraform/main.tf checks field names against its override table.
+  type    = map(map(string))
   default = {}
 
   validation {
-    condition = alltrue([
-      for override_set in values(var.security_overrides) : alltrue([
-        for override in [
-          override_set.ssl,
-          override_set.security_level,
-          override_set.always_use_https,
-          override_set.min_tls_version,
-          override_set.browser_integrity_check,
-          override_set.bot_fight_mode,
-        ] : override == null ? true : trimspace(override) != ""
-      ])
-    ])
+    condition = alltrue(flatten([
+      for override_set in values(var.security_overrides) : [
+        for override in values(override_set) : override != null && trimspace(coalesce(override, " ")) != ""
+      ]
+    ]))
     error_message = "A per-domain security override must be omitted or set to a non-empty value."
   }
 
   validation {
-    condition = alltrue([
-      for override_set in values(var.security_overrides) :
-      anytrue([for override in values(override_set) : override != null])
-    ])
+    condition     = alltrue([for override_set in values(var.security_overrides) : length(override_set) > 0])
     error_message = "Each security_overrides entry must set at least one override. Remove entries with no overrides."
   }
 }

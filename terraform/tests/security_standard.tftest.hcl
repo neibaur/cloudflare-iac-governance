@@ -253,6 +253,30 @@ run "override_entry_without_overrides_is_rejected" {
   ]
 }
 
+run "misspelled_override_field_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "typo.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c368"
+      }
+    }
+
+    # A valid field next to the misspelled one, so the entry isn't rejected for being empty.
+    security_overrides = {
+      "typo.example" = {
+        ssl           = "strict"
+        securty_level = "high"
+      }
+    }
+  }
+
+  expect_failures = [
+    output.security_standard,
+  ]
+}
+
 run "override_inside_inventory_is_rejected" {
   command = plan
 
