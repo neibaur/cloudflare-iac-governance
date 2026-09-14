@@ -9,6 +9,8 @@ from typing import Any, cast
 import gspread
 import pandas as pd
 
+from scripts.report_columns import AUDIT_DATE_COLUMN, INTERNAL_COLUMNS
+
 REPORTS_DIR = Path(os.path.abspath(os.path.join("reports")))
 SERVICE_ACCOUNT_FILE = Path("service_account.json")
 MAIN_SHEET_NAME = "Cloudflare_Compliance_Main"
@@ -18,7 +20,6 @@ HISTORY_WORKSHEET_TITLE = "history"
 REPORT_PATTERN = re.compile(r"^(?P<audit_date>\d{8}T\d{6}Z)_security_compliance_report\.csv$")
 LATEST_REPORT_NAME = "security_compliance_report.csv"
 SENSITIVE_COLUMNS = ("zone_id",)
-INTERNAL_COLUMNS = ("__source_file", "__is_latest_snapshot")
 
 
 def discover_audit_reports(reports_dir: Path = REPORTS_DIR) -> list[Path]:
@@ -72,7 +73,9 @@ def snapshot_hour(audit_date: str) -> str:
 
 def snapshot_signature(dataframe: pd.DataFrame) -> tuple[tuple[object, ...], ...]:
     public_columns = [
-        column for column in dataframe.columns if column not in {"audit_date", *INTERNAL_COLUMNS}
+        column
+        for column in dataframe.columns
+        if column not in {AUDIT_DATE_COLUMN, *INTERNAL_COLUMNS}
     ]
     comparable = dataframe[public_columns].sort_values(public_columns).fillna("")
     return tuple(tuple(row) for row in comparable.itertuples(index=False, name=None))

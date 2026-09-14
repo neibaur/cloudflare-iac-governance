@@ -119,13 +119,13 @@ alongside it for history.
 Generate the compliance trend summary:
 
 ```powershell
-python scripts/generate_compliance_summary.py
+python -m scripts.generate_compliance_summary
 ```
 
 Sync historical audit reports to Google Sheets locally:
 
 ```powershell
-python scripts/aggregate_to_sheets.py
+python -m scripts.aggregate_to_sheets
 ```
 
 The `Quality` workflow uses `terraform/ci.auto.tfvars` with mock domains so GitHub

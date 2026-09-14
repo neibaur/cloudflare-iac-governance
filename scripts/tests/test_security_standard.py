@@ -235,7 +235,17 @@ def test_csv_headers_grow_with_additional_controls(tmp_path):
     assert report_path.read_text(encoding="utf-8").splitlines()[0] == ",".join(headers)
 
 
-@pytest.mark.parametrize("key", ["zone_id", "is_compliant", "ssl_mode"])
+@pytest.mark.parametrize(
+    "key",
+    [
+        "zone_id",
+        "is_compliant",
+        "ssl_mode",
+        "audit_date",
+        "__source_file",
+        "__is_latest_snapshot",
+    ],
+)
 def test_csv_headers_reject_colliding_control_columns(key):
     controls = (
         *load_security_standard(),
