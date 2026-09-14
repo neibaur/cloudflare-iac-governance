@@ -43,8 +43,10 @@
 .NOTES
     Windows only. Needs network access to the Terraform registry and the R2 endpoint. A passing
     run leaves no object in the bucket. When the script exits, even on failure or Ctrl+C, it stops
-    its Terraform processes and clears any lock left on its disposable key. If the window is closed
-    or the process is killed, delete the lock-test/ prefix in the R2 dashboard.
+    its Terraform processes and clears any lock left on its disposable key. The script prints its run
+    ID when it starts. If the window is closed or the process is killed, delete only
+    lock-test/<run ID>/ in the R2 dashboard: another operator's test may be using a different run
+    ID under lock-test/ at the same time.
 #>
 [CmdletBinding()]
 param(
@@ -95,6 +97,8 @@ function Hide-Identity([string]$Text) {
 }
 
 $runId = [guid]::NewGuid().ToString('N').Substring(0, 12)
+# Printed first so the operator knows which prefix to clean up if the process is killed.
+Write-Output "Run ID: $runId (disposable key lock-test/$runId/terraform.tfstate)"
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "r2-lock-test-$runId"
 $savedEnv = @{}
 foreach ($name in 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') {
@@ -268,7 +272,7 @@ finally {
         # Cleanup is part of the result: a run that can't confirm the lock is gone doesn't pass.
         $results['disposable lock cleaned up'] = if ($lockClear) { 'PASS' } else { "FAIL: $(Get-FailDetail 'cleanup-probe')" }
         if (-not $lockClear) {
-            Write-Host 'WARNING: could not confirm the disposable lock is clear. Delete the lock-test/ prefix in the R2 dashboard.' -ForegroundColor Yellow
+            Write-Host "WARNING: could not confirm the disposable lock is clear. Delete lock-test/$runId/ in the R2 dashboard." -ForegroundColor Yellow
         }
     }
     if ($pushed) { Pop-Location }

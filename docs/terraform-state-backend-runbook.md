@@ -76,9 +76,10 @@ marker instead of a fixed delay. On slow connections, raise `-AcquireTimeoutSeco
 
 A passing run prints `RESULT: PASS` and leaves no object in the bucket. The script cleans up on any
 exit, including failure and Ctrl+C: it stops its Terraform processes and force-unlocks any lock left
-on its disposable key. If the window is closed or the process is killed before cleanup runs, a
-`.tflock` object can remain. Delete the `lock-test/` prefix on the bucket's **Objects** tab. Never
-delete objects under `state/`.
+on its disposable key. The script prints its run ID when it starts. If the window is closed or the
+process is killed before cleanup runs, a `.tflock` object can remain. On the bucket's **Objects**
+tab, delete only `lock-test/<run ID>/` for that run. Another operator's test can be using a
+different run ID at the same time. Never delete objects under `state/`.
 
 If it fails, don't migrate state. Fix the reported problem, or evaluate ADR 0001's HCP Terraform
 fallback. When recording the result, give only the date, the Terraform version, and pass or fail.
