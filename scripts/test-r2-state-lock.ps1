@@ -16,6 +16,7 @@
       4. a force-killed run leaves a stale lock
       5. terraform force-unlock clears that lock and a new run succeeds
       6. neither credential value appears in any output or in the .terraform directory
+      7. cleanup confirms no lock remains on the disposable key
 
     Only PASS or FAIL lines are printed. Credential values, the bucket name, and the account ID are
     redacted from failure details.
@@ -264,6 +265,8 @@ finally {
                 $lockClear = $unlock.ExitCode -eq 0
             }
         }
+        # Cleanup is part of the result: a run that can't confirm the lock is gone doesn't pass.
+        $results['disposable lock cleaned up'] = if ($lockClear) { 'PASS' } else { "FAIL: $(Get-FailDetail 'cleanup-probe')" }
         if (-not $lockClear) {
             Write-Host 'WARNING: could not confirm the disposable lock is clear. Delete the lock-test/ prefix in the R2 dashboard.' -ForegroundColor Yellow
         }
@@ -277,7 +280,7 @@ Write-Output "Terraform $((terraform version -json | ConvertFrom-Json).terraform
 $results.GetEnumerator() | ForEach-Object { Write-Output ('{0,-42} {1}' -f $_.Key, $_.Value) }
 $failed = @($results.Values | Where-Object { $_ -ne 'PASS' }).Count
 # A failed early check skips later checks, so require every check to have run.
-$expectedChecks = 9
+$expectedChecks = 10
 if ($results.Count -lt $expectedChecks -or $failed -gt 0) {
     Write-Output 'RESULT: FAIL. Do not migrate state; see the runbook.'
     exit 1

@@ -67,6 +67,7 @@ fixed time. The script then checks that:
 - the lock is released normally
 - a force-killed run leaves a stale lock, which `terraform force-unlock` clears
 - neither credential appears in any output or in `.terraform`
+- cleanup confirms no lock remains on the disposable key
 
 Each lock holder writes a marker file once Terraform holds the lock, and the script waits for that
 marker instead of a fixed delay. On slow connections, raise `-AcquireTimeoutSeconds` (default 180).
@@ -130,7 +131,7 @@ override, so it can use `ci.auto.tfvars` without contacting R2. First confirm th
 terraform {
   backend "local" {}
 }
-'@ | Set-Content terraform/ci_backend_override.tf -NoNewline
+'@ | Set-Content terraform/ci_backend_override.tf -NoNewline -Encoding ascii
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform test

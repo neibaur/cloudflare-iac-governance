@@ -84,7 +84,7 @@ terraform -chdir=terraform fmt -check -recursive
 terraform {
   backend "local" {}
 }
-'@ | Set-Content terraform/ci_backend_override.tf -NoNewline
+'@ | Set-Content terraform/ci_backend_override.tf -NoNewline -Encoding ascii
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform test
