@@ -86,3 +86,16 @@ run "empty_override_is_rejected" {
     var.domains,
   ]
 }
+
+run "empty_domain_map_plans" {
+  command = plan
+
+  variables {
+    domains = {}
+  }
+
+  assert {
+    condition     = length(output.security_standard) > 0
+    error_message = "A plan with no domains must still succeed and expose the security standard."
+  }
+}

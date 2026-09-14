@@ -25,9 +25,13 @@ output "security_standard" {
   }
 
   precondition {
-    condition = length(module.cloudflare_zone_config) == 0 || jsonencode(
-      values(module.cloudflare_zone_config)[0].managed_controls
-    ) == jsonencode(local.policy_controls)
+    # The conditional makes the empty-domain guard explicit: with no domains, no module instance is
+    # indexed. The empty_domain_map_plans test covers this case.
+    condition = (
+      length(module.cloudflare_zone_config) == 0
+      ? true
+      : jsonencode(values(module.cloudflare_zone_config)[0].managed_controls) == jsonencode(local.policy_controls)
+    )
     error_message = "The policy's controls, resources, or setting IDs do not match what terraform/main.tf and the zone module manage. Wire the policy change into Terraform."
   }
 }

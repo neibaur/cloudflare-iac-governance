@@ -28,6 +28,9 @@ Change the standard only in this file, through a reviewed pull request.
   requires wiring the change into `terraform/main.tf` and the zone module. Until that is done, every
   Terraform plan fails its policy precondition and `terraform test` fails, so a policy change can't
   silently go unenforced. The audit follows the file automatically.
+- **A new control adds a report column.** The audit CSV gains the column. The first Google Sheets
+  sync afterwards appends it to the right of the existing `history` worksheet header, so existing
+  columns keep their positions. BI data sources may need a field refresh to show it.
 
 Per-domain overrides in Terraform inputs take precedence over the standard only when they are set.
 An empty override is rejected.

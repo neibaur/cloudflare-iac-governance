@@ -9,7 +9,14 @@ from urllib.parse import quote
 
 import httpx
 
-from scripts.security_standard import SecurityControl, expected_values, load_security_standard
+from scripts.security_standard import (
+    BOT_MANAGEMENT_RESOURCE,
+    ZONE_SETTING_RESOURCE,
+    SecurityControl,
+    expected_values,
+    load_security_standard,
+    validate_controls,
+)
 
 # Compatibility mapping: the ssl control keeps its historical CSV column name.
 CSV_COLUMN_BY_CONTROL = {"ssl": "ssl_mode"}
@@ -71,7 +78,9 @@ class CloudflareAuditor:
         self.api_token = api_token
         self.account_id = account_id
         self.base_url = base_url.rstrip("/")
-        self.controls = controls if controls is not None else load_security_standard()
+        self.controls = (
+            validate_controls(controls) if controls is not None else load_security_standard()
+        )
         self.expected_values = expected_values(self.controls)
         self.csv_headers = security_csv_headers(self.controls)
         self._client = httpx.Client(
@@ -238,15 +247,17 @@ class CloudflareAuditor:
 
         settings: dict[str, Any] = {}
         for control in self.controls:
-            if control.resource == "cloudflare_zone_setting":
+            if control.resource == ZONE_SETTING_RESOURCE:
                 # load_security_standard guarantees zone-setting controls carry a setting_id.
                 setting_id = cast(str, control.setting_id)
                 settings[control.key] = self._setting_value(
                     self._get_zone_setting(zone_id, setting_id),
                     setting_id,
                 )
-            else:
+            elif control.resource == BOT_MANAGEMENT_RESOURCE:
                 settings[control.key] = self._get_bot_fight_mode(zone_id)
+            else:  # pragma: no cover - validate_controls rejects other resources
+                raise ValueError(f"Unsupported security control resource: {control.resource}")
         return settings
 
     def _get_bot_fight_mode(self, zone_id: str) -> str:

@@ -11,9 +11,9 @@ DEFAULT_STANDARD_PATH = (
 )
 _TOP_LEVEL_KEYS = {"schema_version", "controls"}
 _CONTROL_KEYS = {"key", "resource", "setting_id", "expected", "auto_correct"}
-_ZONE_SETTING_RESOURCE = "cloudflare_zone_setting"
-_BOT_MANAGEMENT_RESOURCE = "cloudflare_bot_management"
-_VALID_RESOURCES = {_ZONE_SETTING_RESOURCE, _BOT_MANAGEMENT_RESOURCE}
+ZONE_SETTING_RESOURCE = "cloudflare_zone_setting"
+BOT_MANAGEMENT_RESOURCE = "cloudflare_bot_management"
+_VALID_RESOURCES = {ZONE_SETTING_RESOURCE, BOT_MANAGEMENT_RESOURCE}
 
 
 class SecurityStandardError(ValueError):
@@ -51,32 +51,53 @@ def load_security_standard(path: Path = DEFAULT_STANDARD_PATH) -> tuple[Security
         raise SecurityStandardError("Security standard controls must be a non-empty list.")
 
     parsed_controls: list[SecurityControl] = []
+    for index, control in enumerate(controls):
+        if not isinstance(control, dict) or set(control) != _CONTROL_KEYS:
+            raise SecurityStandardError(
+                f"Security standard control at index {index} must contain exactly the required "
+                "fields."
+            )
+        parsed_controls.append(
+            SecurityControl(
+                key=control["key"],
+                resource=control["resource"],
+                setting_id=control["setting_id"],
+                expected=control["expected"],
+                auto_correct=control["auto_correct"],
+            )
+        )
+
+    return validate_controls(tuple(parsed_controls))
+
+
+def validate_controls(controls: tuple[SecurityControl, ...]) -> tuple[SecurityControl, ...]:
+    """Enforce the control contract for loaded or caller-supplied controls and return them."""
+    if not isinstance(controls, tuple) or not controls:
+        raise SecurityStandardError("Security controls must be a non-empty tuple.")
+
     control_keys: set[str] = set()
     setting_ids: set[str] = set()
     bot_management_controls = 0
     for index, control in enumerate(controls):
         label = f"Security standard control at index {index}"
-        if not isinstance(control, dict) or set(control) != _CONTROL_KEYS:
-            raise SecurityStandardError(f"{label} must contain exactly the required fields.")
+        if not isinstance(control, SecurityControl):
+            raise SecurityStandardError(f"{label} must be a SecurityControl.")
 
-        key = control["key"]
-        expected = control["expected"]
-        resource = control["resource"]
-        setting_id = control["setting_id"]
-        auto_correct = control["auto_correct"]
+        key = control.key
+        setting_id = control.setting_id
         if not isinstance(key, str) or not key:
             raise SecurityStandardError(f"{label} key must be a non-empty string.")
-        if not isinstance(expected, str) or not expected:
+        if not isinstance(control.expected, str) or not control.expected:
             raise SecurityStandardError(f"{label} expected must be a non-empty string.")
-        if type(auto_correct) is not bool:
+        if type(control.auto_correct) is not bool:
             raise SecurityStandardError(f"{label} auto_correct must be a bool.")
-        if not isinstance(resource, str) or resource not in _VALID_RESOURCES:
+        if not isinstance(control.resource, str) or control.resource not in _VALID_RESOURCES:
             raise SecurityStandardError(f"{label} resource is not supported.")
-        if resource == _ZONE_SETTING_RESOURCE and (
+        if control.resource == ZONE_SETTING_RESOURCE and (
             not isinstance(setting_id, str) or not setting_id
         ):
             raise SecurityStandardError(f"{label} setting_id must be a non-empty string.")
-        if resource == _BOT_MANAGEMENT_RESOURCE and setting_id is not None:
+        if control.resource == BOT_MANAGEMENT_RESOURCE and setting_id is not None:
             raise SecurityStandardError(f"{label} setting_id must be null.")
         if key in control_keys:
             raise SecurityStandardError(f"Security standard contains duplicate control key: {key}.")
@@ -86,7 +107,7 @@ def load_security_standard(path: Path = DEFAULT_STANDARD_PATH) -> tuple[Security
                     f"Security standard contains duplicate setting_id: {setting_id}."
                 )
             setting_ids.add(setting_id)
-        if resource == _BOT_MANAGEMENT_RESOURCE:
+        if control.resource == BOT_MANAGEMENT_RESOURCE:
             bot_management_controls += 1
             if bot_management_controls > 1:
                 raise SecurityStandardError(
@@ -94,17 +115,8 @@ def load_security_standard(path: Path = DEFAULT_STANDARD_PATH) -> tuple[Security
                 )
 
         control_keys.add(key)
-        parsed_controls.append(
-            SecurityControl(
-                key=key,
-                resource=resource,
-                setting_id=setting_id,
-                expected=expected,
-                auto_correct=auto_correct,
-            )
-        )
 
-    return tuple(parsed_controls)
+    return controls
 
 
 def expected_values(controls: tuple[SecurityControl, ...]) -> dict[str, str]:

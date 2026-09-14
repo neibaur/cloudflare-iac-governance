@@ -244,3 +244,22 @@ def test_csv_headers_reject_colliding_control_columns(key):
 
     with pytest.raises(ValueError, match="unique CSV columns"):
         security_csv_headers(controls)
+
+
+@pytest.mark.parametrize(
+    "controls",
+    [
+        (),
+        [SecurityControl("ssl", "cloudflare_zone_setting", "ssl", "full", False)],
+        (SecurityControl("ssl", "cloudflare_zone_settings", "ssl", "full", False),),
+        (SecurityControl("bot", "cloudflare_bot_management", "fight_mode", "on", False),),
+        (SecurityControl("ssl", "cloudflare_zone_setting", None, "full", False),),
+        (
+            SecurityControl("ssl", "cloudflare_zone_setting", "ssl", "full", False),
+            SecurityControl("ssl", "cloudflare_zone_setting", "ssl_again", "full", False),
+        ),
+    ],
+)
+def test_auditor_rejects_invalid_caller_supplied_controls(controls):
+    with pytest.raises(SecurityStandardError):
+        CloudflareAuditor("placeholder-token", "placeholder-account", controls=controls)
