@@ -104,9 +104,14 @@ $started = New-Object System.Collections.Generic.List[System.Diagnostics.Process
 $initialized = $false
 
 function Invoke-Tf([string]$Name, [string[]]$Arguments, [switch]$NoWait) {
+    # Windows PowerShell 5.1 joins ArgumentList with spaces and doesn't quote, so quote any argument
+    # that contains whitespace or a double quote, such as a temp path under a profile with a space.
+    $quoted = foreach ($argument in $Arguments) {
+        if ($argument -match '[\s"]') { '"' + ($argument -replace '"', '\"') + '"' } else { $argument }
+    }
     $params = @{
         FilePath               = 'terraform'
-        ArgumentList           = $Arguments
+        ArgumentList           = $quoted
         NoNewWindow            = $true
         PassThru               = $true
         RedirectStandardOutput = "$work\$Name.out.log"
@@ -174,11 +179,12 @@ variable "marker_path" {
 }
 
 # Runs during the plan, after the state lock is acquired: writes an optional marker, then holds the
-# lock for hold_seconds without creating any resource.
+# lock for hold_seconds without creating any resource. Doubling apostrophes makes the path a valid
+# PowerShell single-quoted literal.
 data "external" "hold" {
   program = [
     "powershell", "-NoProfile", "-Command",
-    "if ('${var.marker_path}') { New-Item -ItemType File -Force -Path '${var.marker_path}' | Out-Null }; Start-Sleep -Seconds ${var.hold_seconds}; '{}'",
+    "$marker = '${replace(var.marker_path, "'", "''")}'; if ($marker) { New-Item -ItemType File -Force -Path $marker | Out-Null }; Start-Sleep -Seconds ${var.hold_seconds}; '{}'",
   ]
 }
 '@)

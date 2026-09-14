@@ -94,14 +94,22 @@ endpoints = {
 }
 ```
 
-Load the operator key into the current shell only, then initialize from the repository root:
+Load the operator key from `.env` into the current shell only, then initialize from the repository
+root. Never type or paste a key into a command: PowerShell's PSReadLine saves command history to
+disk. This loop copies the values without displaying them.
 
 ```powershell
-$env:AWS_ACCESS_KEY_ID = "<operator access key ID>"
-$env:AWS_SECRET_ACCESS_KEY = "<operator secret access key>"
+foreach ($line in Get-Content .env) {
+    if ($line -match '^\s*TF_STATE_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)\s*=\s*(.+?)\s*$') {
+        Set-Item "Env:AWS_$($Matches[1])" $Matches[2].Trim('"').Trim("'")
+    }
+}
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
 ```
+
+When you're finished, clear the keys from the shell:
+`Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY`.
 
 Removing `ci_backend_override.tf` first matters. If a mock gate run was interrupted and left the
 file behind, it keeps Terraform on the local backend.
