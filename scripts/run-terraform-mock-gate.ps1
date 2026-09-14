@@ -17,7 +17,8 @@
       6. terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
     The override is removed on every exit, including failure. The script exits 1 if any step fails.
-    Inherited TF_DATA_DIR, TF_WORKSPACE, and TF_CLI_ARGS* values are ignored for the run.
+    Inherited TF_DATA_DIR, TF_WORKSPACE, TF_CLI_ARGS*, and TF_VAR_* values are ignored for the run, so
+    the plan and tests use only ci.auto.tfvars and the test files' own variables.
     CI runs this script in .github/workflows/quality.yml.
 
 .EXAMPLE
@@ -33,10 +34,11 @@ $terraformDir = Join-Path $RepoRoot 'terraform'
 $override = Join-Path $terraformDir 'ci_backend_override.tf'
 
 # Inherited values could point Terraform at another checkout's .terraform directory, which may be
-# initialized against remote state, or inject extra arguments. Cleared for the run, restored after.
+# initialized against remote state, inject extra arguments, or set input variables that ci.auto.tfvars
+# doesn't. Cleared for the run, restored after.
 $terraformEnv = @('TF_DATA_DIR', 'TF_WORKSPACE') + @(
     [Environment]::GetEnvironmentVariables('Process').Keys |
-        Where-Object { $_ -match '^TF_CLI_ARGS(?:_.*)?$' }
+        Where-Object { $_ -match '^TF_(?:CLI_ARGS(?:_.*)?|VAR_.+)$' }
 )
 $savedEnv = foreach ($name in $terraformEnv) {
     [pscustomobject]@{
