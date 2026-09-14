@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 
 import pytest
@@ -7,15 +6,8 @@ from scripts import check_compliance_gaps
 
 
 @pytest.fixture
-def report_workspace():
-    root = Path("pytest-cache-files-gaps")
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir()
-
-    yield root
-
-    shutil.rmtree(root, ignore_errors=True)
+def report_workspace(tmp_path):
+    return tmp_path
 
 
 def write_report(path: Path, compliant_values: list[str]) -> None:
