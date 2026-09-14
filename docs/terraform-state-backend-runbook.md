@@ -45,7 +45,8 @@ Credentials come only from environment variables.
    Add them together with the workflow that first uses them, in a GitHub Environment restricted to
    `main`.
 
-Never put either key in `backend.hcl`, command arguments, or any file in the repository. HashiCorp
+Never put either key in `backend.hcl`, command arguments, or any tracked file. The ignored `.env` is
+the only file that holds them. HashiCorp
 warns that backend credentials supplied through configuration or `-backend-config` can be written to
 `.terraform` and to plan files.
 
@@ -104,6 +105,8 @@ foreach ($line in Get-Content .env) {
         Set-Item "Env:AWS_$($Matches[1])" $Matches[2].Trim('"').Trim("'")
     }
 }
+# A leftover AWS session token would be sent with the R2 keys and fail authentication.
+Remove-Item Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
 ```
@@ -132,7 +135,11 @@ terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform test
 terraform -chdir=terraform init -reconfigure
-terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
+if (Test-Path terraform/terraform.tfstate*) {
+    Write-Error "Terraform state found: never plan mock inputs against real state."
+} else {
+    terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
+}
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 ```
 
@@ -146,7 +153,8 @@ Never edit a Terraform state file manually.
 
 R2 does not document S3 object versioning, so recovery relies on locked backup copies:
 - **Backups:** before any state-writing operation, copy the live state object to
-  `backups/<UTC timestamp>.tfstate`. Every copy gets a new key.
+  `backups/<UTC timestamp>-<random suffix>.tfstate`. The random suffix guarantees a new key even
+  for two copies in the same second, because the bucket lock rejects overwriting an existing backup.
 - **Bucket lock rule:** on the bucket's **Settings** tab, a rule on the `backups/` prefix with a
   30-day retention stops any backup being deleted or overwritten for 30 days. That includes deletion
   with a leaked key.
@@ -156,9 +164,16 @@ R2 does not document S3 object versioning, so recovery relies on locked backup c
 Never apply a bucket lock rule to `state/` or to the whole bucket. Terraform overwrites the live
 state and deletes its `.tflock` during normal operation, and a lock would block both.
 
-Configure the two rules when the first state-writing workflow adds the backup step. Restore by
-copying a chosen backup over the live key through a reviewed procedure, then running a refresh plan
-to confirm the result.
+Configure the two rules when the first state-writing workflow adds the backup step.
+
+A restore copies an object directly over the live key, which bypasses Terraform's lock. Use a
+reviewed procedure that follows these steps:
+1. Disable every workflow that uses the state, and confirm no operator is running Terraform against
+   it.
+2. Confirm that no `state/terraform.tfstate.tflock` object exists. If one does, find out which run
+   holds it before going further.
+3. Copy the chosen backup over `state/terraform.tfstate`.
+4. Run a refresh plan to confirm the result, then re-enable the workflows.
 
 ## Sources
 

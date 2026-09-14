@@ -103,7 +103,11 @@ terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform test
 terraform -chdir=terraform init -reconfigure
-terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
+if (Test-Path terraform/terraform.tfstate*) {
+    Write-Error "Terraform state found: never plan mock inputs against real state."
+} else {
+    terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
+}
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 ```
 

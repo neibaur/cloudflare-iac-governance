@@ -96,12 +96,13 @@ function Hide-Identity([string]$Text) {
 $runId = [guid]::NewGuid().ToString('N').Substring(0, 12)
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "r2-lock-test-$runId"
 $savedEnv = @{}
-foreach ($name in 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') {
+foreach ($name in 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 $results = [ordered]@{}
 $started = New-Object System.Collections.Generic.List[System.Diagnostics.Process]
 $initialized = $false
+$pushed = $false
 
 function Invoke-Tf([string]$Name, [string[]]$Arguments, [switch]$NoWait) {
     # Windows PowerShell 5.1 joins ArgumentList with spaces and doesn't quote, so quote any argument
@@ -119,8 +120,13 @@ function Invoke-Tf([string]$Name, [string[]]$Arguments, [switch]$NoWait) {
     }
     $process = Start-Process @params
     $null = $process.Handle  # Windows PowerShell 5.1 loses ExitCode unless the handle is cached.
-    if ($NoWait) { $started.Add($process) } else { $process.WaitForExit() }
+    $started.Add($process)
+    if (-not $NoWait) { $process.WaitForExit() }
     return $process
+}
+function Stop-TfProcess([System.Diagnostics.Process]$Process) {
+    if (-not $Process.HasExited) { & taskkill.exe /T /F /PID $Process.Id 2>$null | Out-Null }
+    $Process.WaitForExit()
 }
 # The data source writes the marker only after Terraform holds the state lock, so waiting for it
 # replaces a fixed delay.
@@ -141,8 +147,9 @@ function Get-TfOutput([string]$Name) {
     return ((Get-Content "$work\$Name.out.log", "$work\$Name.err.log" -Raw -ErrorAction SilentlyContinue) -join "`n")
 }
 function Get-FailDetail([string]$Name) {
-    $lines = (Get-TfOutput $Name) -split "`n" | Where-Object { $_ -match 'Error|denied|Forbidden|NoSuch|40[134]' } |
-        Select-Object -First 5
+    $allLines = (Get-TfOutput $Name) -split "`n" | Where-Object { $_.Trim() }
+    $lines = $allLines | Where-Object { $_ -match 'Error|denied|Forbidden|NoSuch|40[134]' } | Select-Object -First 5
+    if (-not $lines) { $lines = $allLines | Select-Object -Last 3 }
     return Hide-Identity ($lines -join ' | ')
 }
 function Set-Result([string]$Check, [bool]$Passed, [string]$Name) {
@@ -154,7 +161,8 @@ try {
     $env:AWS_ACCESS_KEY_ID = $envValues.TF_STATE_ACCESS_KEY_ID
     $env:AWS_SECRET_ACCESS_KEY = $envValues.TF_STATE_SECRET_ACCESS_KEY
     $env:TF_IN_AUTOMATION = '1'
-    Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+    # An inherited AWS session token would be sent with the R2 keys and fail authentication.
+    Remove-Item Env:AWS_SESSION_TOKEN, Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
 
     New-Item -ItemType Directory $work | Out-Null
     Copy-Item (Join-Path $RepoRoot 'terraform\backend.tf') "$work\backend.tf"
@@ -163,7 +171,7 @@ terraform {
   required_providers {
     external = {
       source  = "hashicorp/external"
-      version = "~> 2.3"
+      version = "= 2.4.2"
     }
   }
 }
@@ -193,6 +201,7 @@ data "external" "hold" {
         "endpoints = {`n  s3 = `"https://$accountId.r2.cloudflarestorage.com`"`n}`n")
 
     Push-Location $work
+    $pushed = $true
     $plan = @('plan', '-refresh=false', '-input=false', '-no-color', '-lock-timeout=0s')
 
     $init = Invoke-Tf 'init' @('init', '-input=false', '-no-color', '-backend-config=backend.hcl')
@@ -212,6 +221,7 @@ data "external" "hold" {
         }
         else {
             $results['second run refused while lock is held'] = "FAIL: holder did not acquire the lock within $AcquireTimeoutSeconds seconds. $(Get-FailDetail 'holder')"
+            Stop-TfProcess $holder
         }
         $holder.WaitForExit()
         $null = Set-Result 'lock holder finishes normally' ($holder.ExitCode -eq 0) 'holder'
@@ -222,8 +232,7 @@ data "external" "hold" {
         $victimMarker = (Join-Path $work 'victim.marker').Replace('\', '/')
         $victim = Invoke-Tf 'victim' ($plan + "-var=hold_seconds=$HoldSeconds" + "-var=marker_path=$victimMarker") -NoWait
         $victimHeld = Wait-LockHeld $victim $victimMarker
-        & taskkill.exe /T /F /PID $victim.Id 2>$null | Out-Null
-        $victim.WaitForExit()
+        Stop-TfProcess $victim
         $blocked = Invoke-Tf 'blocked' $plan
         $lockId = Get-LockId 'blocked'
         if (Set-Result 'killed run leaves a stale lock' ($victimHeld -and ($blocked.ExitCode -ne 0) -and $lockId) 'blocked') {
@@ -234,10 +243,9 @@ data "external" "hold" {
         }
     }
 
-    $logs = (Get-ChildItem $work -Filter *.log | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
-    $dotTerraform = (Get-ChildItem "$work\.terraform" -Recurse -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Length -lt 1MB } | ForEach-Object { Get-Content $_.FullName -Raw }) -join "`n"
-    $leaked = foreach ($text in $logs, $dotTerraform) {
+    $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+    $leaked = foreach ($file in Get-ChildItem $work -Recurse -File -Force) {
+        $text = $latin1.GetString([System.IO.File]::ReadAllBytes($file.FullName))
         $text.Contains($envValues.TF_STATE_ACCESS_KEY_ID) -or $text.Contains($envValues.TF_STATE_SECRET_ACCESS_KEY)
     }
     $null = Set-Result 'no credential in output or .terraform' (-not ($leaked -contains $true)) $null
@@ -245,21 +253,22 @@ data "external" "hold" {
 finally {
     # Stop any Terraform run still in flight, then clear a lock it may have left on the disposable
     # key, so an interrupted or failed test doesn't leave a .tflock object in the bucket.
-    foreach ($process in $started) {
-        if (-not $process.HasExited) {
-            & taskkill.exe /T /F /PID $process.Id 2>$null | Out-Null
-            $process.WaitForExit()
-        }
-    }
+    foreach ($process in @($started)) { Stop-TfProcess $process }
     if ($initialized) {
         $probe = Invoke-Tf 'cleanup-probe' $plan
-        $staleLockId = if ($probe.ExitCode -ne 0) { Get-LockId 'cleanup-probe' } else { $null }
-        if ($staleLockId) { $null = Invoke-Tf 'cleanup-unlock' @('force-unlock', '-force', '-no-color', $staleLockId) }
-        if ($probe.ExitCode -ne 0 -and -not $staleLockId) {
+        $lockClear = $probe.ExitCode -eq 0
+        if (-not $lockClear) {
+            $staleLockId = Get-LockId 'cleanup-probe'
+            if ($staleLockId) {
+                $unlock = Invoke-Tf 'cleanup-unlock' @('force-unlock', '-force', '-no-color', $staleLockId)
+                $lockClear = $unlock.ExitCode -eq 0
+            }
+        }
+        if (-not $lockClear) {
             Write-Host 'WARNING: could not confirm the disposable lock is clear. Delete the lock-test/ prefix in the R2 dashboard.' -ForegroundColor Yellow
         }
     }
-    Pop-Location -ErrorAction SilentlyContinue
+    if ($pushed) { Pop-Location }
     foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name], 'Process') }
     if (Test-Path $work) { Remove-Item -Recurse -Force $work }
 }
