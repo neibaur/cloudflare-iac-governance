@@ -63,6 +63,18 @@ def mock_cloudflare(mocker, cloudflare_fixture_data):
             "messages": [],
             "result": {"id": "always_use_https", "value": "on"},
         },
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/min_tls_version": {
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {"id": "min_tls_version", "value": "1.2"},
+        },
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/browser_check": {
+            "success": True,
+            "errors": [],
+            "messages": [],
+            "result": {"id": "browser_check", "value": "on"},
+        },
         f"/zones/{cloudflare_fixture_data.zone_id}/bot_management": {
             "success": True,
             "errors": [],

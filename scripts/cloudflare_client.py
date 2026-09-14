@@ -9,17 +9,9 @@ from urllib.parse import quote
 
 import httpx
 
-SECURITY_SETTING_IDS = (
-    "ssl",
-    "security_level",
-    "always_use_https",
-)
-SECURITY_STANDARDS = {
-    "ssl": "full",
-    "security_level": "medium",
-    "always_use_https": "on",
-    "bot_fight_mode": "on",
-}
+from scripts.security_standard import SecurityControl, expected_values, load_security_standard
+
+CSV_COLUMN_BY_CONTROL = {"ssl": "ssl_mode"}
 SECURITY_CSV_HEADERS = (
     "domain_name",
     "zone_id",
@@ -27,6 +19,8 @@ SECURITY_CSV_HEADERS = (
     "always_use_https",
     "security_level",
     "bot_fight_mode",
+    "min_tls_version",
+    "browser_check",
     "is_compliant",
 )
 LATEST_SECURITY_REPORT = "security_compliance_report.csv"
@@ -53,6 +47,8 @@ class CloudflareAuditor:
         api_token: str,
         account_id: str,
         base_url: str = "https://api.cloudflare.com/client/v4",
+        *,
+        controls: tuple[SecurityControl, ...] | None = None,
     ):
         if not api_token:
             raise ValueError("A scoped Cloudflare API token is required.")
@@ -62,6 +58,8 @@ class CloudflareAuditor:
         self.api_token = api_token
         self.account_id = account_id
         self.base_url = base_url.rstrip("/")
+        self.controls = controls if controls is not None else load_security_standard()
+        self.expected_values = expected_values(self.controls)
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={
@@ -192,22 +190,18 @@ class CloudflareAuditor:
             print(f"[{index}/{len(sorted_zones)}] checking zone...", flush=True)
             settings = self.get_zone_security_settings(cast(str, zone["id"]))
             deviations = {
-                setting_id: value
-                for setting_id, value in settings.items()
-                if value != SECURITY_STANDARDS[setting_id]
+                key: value for key, value in settings.items() if value != self.expected_values[key]
             }
             is_compliant = int(not deviations)
-            rows.append(
+            row: dict[str, Any] = {"domain_name": zone["name"], "zone_id": zone["id"]}
+            row.update(
                 {
-                    "domain_name": zone["name"],
-                    "zone_id": zone["id"],
-                    "ssl_mode": settings["ssl"],
-                    "always_use_https": settings["always_use_https"],
-                    "security_level": settings["security_level"],
-                    "bot_fight_mode": settings["bot_fight_mode"],
-                    "is_compliant": is_compliant,
+                    CSV_COLUMN_BY_CONTROL.get(control.key, control.key): settings[control.key]
+                    for control in self.controls
                 }
             )
+            row["is_compliant"] = is_compliant
+            rows.append(row)
 
             if deviations:
                 findings.append(
@@ -221,7 +215,11 @@ class CloudflareAuditor:
 
         report_path = self._write_security_audit_csv(rows, report_dir)
         self._print_security_audit_report(
-            len(zones), findings, report_path, show_identities=show_identities
+            len(zones),
+            findings,
+            report_path,
+            self.expected_values,
+            show_identities=show_identities,
         )
         return findings
 
@@ -230,13 +228,15 @@ class CloudflareAuditor:
             raise ValueError("zone_id is required.")
 
         settings: dict[str, Any] = {}
-        for setting_id in SECURITY_SETTING_IDS:
-            settings[setting_id] = self._setting_value(
-                self._get_zone_setting(zone_id, setting_id),
-                setting_id,
-            )
-
-        settings["bot_fight_mode"] = self._get_bot_fight_mode(zone_id)
+        for control in self.controls:
+            if control.resource == "cloudflare_zone_setting":
+                assert control.setting_id is not None
+                settings[control.key] = self._setting_value(
+                    self._get_zone_setting(zone_id, control.setting_id),
+                    control.setting_id,
+                )
+            else:
+                settings[control.key] = self._get_bot_fight_mode(zone_id)
         return settings
 
     def _get_bot_fight_mode(self, zone_id: str) -> str:
@@ -470,6 +470,7 @@ class CloudflareAuditor:
         total_zones: int,
         findings: list[dict[str, Any]],
         report_path: Path,
+        expected: dict[str, str],
         *,
         show_identities: bool = True,
     ) -> None:
@@ -489,24 +490,24 @@ class CloudflareAuditor:
                     deviation_counts[key] = deviation_counts.get(key, 0) + 1
             print("")
             for key in sorted(deviation_counts):
-                print(
-                    f"{key}: {deviation_counts[key]} domain(s) expected {SECURITY_STANDARDS[key]}"
-                )
+                print(f"{key}: {deviation_counts[key]} domain(s) expected {expected[key]}")
             print(
                 "Domain identities are omitted from this output. Run the audit locally for details."
             )
             return
 
         print("")
-        print("Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Deviations")
-        print("-" * 86)
+        print(
+            "Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Min TLS | "
+            "Browser Check | Deviations"
+        )
+        print("-" * 116)
 
         for finding in findings:
             settings = cast(dict[str, Any], finding["settings"])
             deviations = cast(dict[str, Any], finding["deviations"])
             deviation_summary = ", ".join(
-                f"{key}={value} expected {SECURITY_STANDARDS[key]}"
-                for key, value in deviations.items()
+                f"{key}={value} expected {expected[key]}" for key, value in deviations.items()
             )
             print(
                 f"{finding['domain']} | "
@@ -514,6 +515,8 @@ class CloudflareAuditor:
                 f"{settings['security_level']} | "
                 f"{settings['always_use_https']} | "
                 f"{settings['bot_fight_mode']} | "
+                f"{settings['min_tls_version']} | "
+                f"{settings['browser_check']} | "
                 f"{deviation_summary}"
             )
 
