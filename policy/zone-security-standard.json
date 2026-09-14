@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "controls": [
+    {
+      "key": "ssl",
+      "resource": "cloudflare_zone_setting",
+      "setting_id": "ssl",
+      "expected": "full",
+      "auto_correct": false
+    },
+    {
+      "key": "security_level",
+      "resource": "cloudflare_zone_setting",
+      "setting_id": "security_level",
+      "expected": "medium",
+      "auto_correct": false
+    },
+    {
+      "key": "always_use_https",
+      "resource": "cloudflare_zone_setting",
+      "setting_id": "always_use_https",
+      "expected": "on",
+      "auto_correct": false
+    },
+    {
+      "key": "min_tls_version",
+      "resource": "cloudflare_zone_setting",
+      "setting_id": "min_tls_version",
+      "expected": "1.2",
+      "auto_correct": false
+    },
+    {
+      "key": "browser_check",
+      "resource": "cloudflare_zone_setting",
+      "setting_id": "browser_check",
+      "expected": "on",
+      "auto_correct": false
+    },
+    {
+      "key": "bot_fight_mode",
+      "resource": "cloudflare_bot_management",
+      "setting_id": null,
+      "expected": "on",
+      "auto_correct": false
+    }
+  ]
+}

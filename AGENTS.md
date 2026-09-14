@@ -50,6 +50,7 @@ These files and folders are generally safe for agents to edit when the change ma
 - `terraform/**/*.tf`
 - `terraform/tests/**/*.hcl`
 - `terraform/ci.auto.tfvars` only when preserving mock, non-secret CI values
+- `policy/zone-security-standard.json` and `policy/README.md`, only when the task changes the security standard or its format
 
 ## Protected Files And Outputs
 
