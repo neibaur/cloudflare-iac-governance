@@ -140,9 +140,26 @@ contact R2. Operators supply those non-secret values through an ignored `backend
 explicit remote initialization.
 
 R2 does not document object versioning, so state recovery uses locked backup copies. Before any
-state-writing operation, copy the live state to a new key under `backups/`. An R2 bucket lock rule on
-`backups/` retains each copy for 30 days, and a lifecycle rule expires copies after 90 days. No lock
-rule covers the live state key or its `.tflock`, which Terraform overwrites and deletes.
+state-writing operation, copy the live state to a new key under `backups/`. The copy must run inside
+the same serialization boundary as the state write it protects. Terraform holds `.tflock` only while
+its own command runs, so a separate copy step can't rely on that lock: the check for a live state
+object, the copy, and the state write run in one serialized GitHub Actions job. Every workflow that
+uses the state, including each later plan, canary, and correction workflow, shares one fixed
+concurrency group (safety design item 7), so no two state-writing runs can overlap even when they
+belong to different workflows. An operator state write outside that workflow first disables every
+workflow that uses the state, cancels or waits for each of their queued and running runs, and
+confirms that no run and no other operator is still active; disabling a workflow alone stops only
+future triggers. Otherwise, overlapping writes can both back up the same old state and fail to
+capture the second write's pre-change state. When no live state object exists, as before the first
+adoption, there is nothing to back up: the job records that no backup was taken and continues.
+
+An R2 bucket lock rule on `backups/` retains each copy for 90 days, and a lifecycle rule expires
+copies after 100 days. Both rules are configured before the first state-writing workflow runs. A
+bucket-scoped key can read and write `backups/`, so only the lock protects a backup from deletion
+with a leaked key; aligning the lock with most of the retention period leaves only a short unlocked
+window before expiry. The lifecycle expiry stays longer than the lock retention because a lifecycle
+rule cannot delete a locked object. No lock rule covers the live state key or its `.tflock`, which
+Terraform overwrites and deletes.
 
 HCP Terraform is the fallback if a later lock acceptance run fails. Its 500-resource Free limit does
 not fit the expected state.
@@ -225,7 +242,9 @@ The drift workflow has separate plan, decision, apply, verification, and alert s
    `-detailed-exitcode`. Only exit 0 succeeds. Exit 1 or 2 fails and opens a summarized alert. The
    workflow never retries an apply.
 7. Give all state-using workflows the same fixed `concurrency` group with `cancel-in-progress:
-   false`. GitHub documents that concurrency limits a group to one running job or workflow
+   false`, and never a per-workflow or per-run group: the state backup relies on this group to keep
+   state-writing runs of different workflows from overlapping. GitHub documents that concurrency
+   limits a group to one running job or workflow
    ([deployment concurrency](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments)).
    The backend lock is the second line of defense.
 8. Trigger drift remediation only from `schedule` (and retain a separately gated diagnostic manual
@@ -294,14 +313,20 @@ Each phase is one reviewable pull request and must pass the repository quality g
    delete, or replacement actions. The operator supplies/rotates `REAL_TFVARS` and privately checks
    the inventory.
 4. **First adoption.** Add a one-time environment-gated workflow/runbook that applies only the
-   reviewed import plan. Acceptance: the operator performs the first import apply, state contains
-   each intended object exactly once, and the immediate full refresh plan returns exit 0. This is
-   the only phase whose acceptance requires the first import apply; rollback uses a reviewed state
+   reviewed import plan. Its backup step runs in the same job as the state write, under the one
+   concurrency group every state-using workflow shares, and records that no backup was taken when no
+   live state object exists. Before the workflow first runs, the operator configures the 90-day
+   `backups/` bucket lock and the 100-day lifecycle rule. Acceptance: both rules are confirmed
+   before the first run, the operator performs the first import apply, every state write either
+   takes its backup inside that boundary or records that no live state existed, state contains each
+   intended object exactly once, and the immediate full refresh plan returns exit 0. This is the
+   only phase whose acceptance requires the first import apply; rollback uses a reviewed state
    version/recovery procedure, never manual state editing.
 5. **Scheduled drift detection.** Replace state-less CI planning with locked remote-state planning,
-   detailed exit codes, sanitized summaries, concurrency, and alerts. Acceptance: scheduled no-drift,
-   safe-drift, error, and simulated-rate-limit cases produce the expected result without exposing
-   identities. The operator adds `CLOUDFLARE_PLAN_API_TOKEN` and backend read/lock secrets.
+   detailed exit codes, sanitized summaries, the shared state concurrency group, and alerts.
+   Acceptance: scheduled no-drift, safe-drift, error, and simulated-rate-limit cases produce the
+   expected result without exposing identities. The operator adds `CLOUDFLARE_PLAN_API_TOKEN` and
+   backend read/lock secrets.
 6. **Policy checker in report-only mode.** Add the Python JSON-plan gate and unit fixtures for every
    allowed and denied action sequence, allow-list violation, malformed input, and the ceiling.
    Acceptance: the checker never invokes Terraform and report-only scheduled runs classify several
