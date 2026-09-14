@@ -9,7 +9,7 @@ from urllib.parse import quote
 
 import httpx
 
-from scripts.aggregate_to_sheets import RESERVED_REPORT_COLUMNS
+from scripts.report_columns import RESERVED_REPORT_COLUMNS
 from scripts.security_standard import (
     BOT_MANAGEMENT_RESOURCE,
     ZONE_SETTING_RESOURCE,

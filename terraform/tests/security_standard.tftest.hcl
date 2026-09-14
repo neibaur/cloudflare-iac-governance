@@ -37,7 +37,13 @@ run "catalog_manages_exactly_the_policy_controls" {
         setting_id = control.setting_id == null ? "" : control.setting_id
       }
     })
-    error_message = "The zone module must manage exactly the controls, resources, and setting IDs in the policy file."
+    error_message = "The control catalog must list exactly the controls, resources, and setting IDs in the policy file."
+  }
+
+  # The catalog is only a source of truth if the zone module's resources actually follow it.
+  assert {
+    condition     = jsonencode(module.cloudflare_zone_config["standard.example"].managed_controls) == jsonencode(module.security_control_catalog.managed_controls)
+    error_message = "The zone module's resources must manage exactly the controls in the security control catalog."
   }
 }
 

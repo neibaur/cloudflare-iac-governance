@@ -30,7 +30,7 @@ output "security_standard" {
 
   precondition {
     condition     = jsonencode(module.security_control_catalog.managed_controls) == jsonencode(local.policy_controls)
-    error_message = "The policy's controls, resources, or setting IDs do not match what terraform/main.tf and the zone module manage. Wire the policy change into Terraform."
+    error_message = "The policy's controls, resources, or setting IDs do not match terraform/modules/security_control_catalog. Wire the policy change into the catalog and the zone module."
   }
 }
 
