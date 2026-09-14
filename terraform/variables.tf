@@ -9,11 +9,11 @@ variable "domains" {
   description = "Map of domain names to Cloudflare zone IDs and optional security posture overrides."
   type = map(object({
     zone_id                 = string
-    ssl                     = optional(string, "full")
-    security_level          = optional(string, "medium")
-    always_use_https        = optional(string, "on")
-    min_tls_version         = optional(string, "1.2")
-    browser_integrity_check = optional(string, "on")
-    bot_fight_mode          = optional(string, "on")
+    ssl                     = optional(string)
+    security_level          = optional(string)
+    always_use_https        = optional(string)
+    min_tls_version         = optional(string)
+    browser_integrity_check = optional(string)
+    bot_fight_mode          = optional(string)
   }))
 }

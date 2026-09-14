@@ -21,7 +21,6 @@ variable "zone_name" {
 variable "ssl" {
   description = "Cloudflare SSL mode for the zone."
   type        = string
-  default     = "full"
 
   validation {
     condition     = contains(["off", "flexible", "full", "strict"], var.ssl)
@@ -32,7 +31,6 @@ variable "ssl" {
 variable "security_level" {
   description = "Cloudflare security level for the zone."
   type        = string
-  default     = "medium"
 
   validation {
     condition = contains(
@@ -46,7 +44,6 @@ variable "security_level" {
 variable "always_use_https" {
   description = "Whether Cloudflare should redirect HTTP requests to HTTPS."
   type        = string
-  default     = "on"
 
   validation {
     condition     = contains(["on", "off"], var.always_use_https)
@@ -57,7 +54,6 @@ variable "always_use_https" {
 variable "min_tls_version" {
   description = "Minimum TLS version accepted for the zone."
   type        = string
-  default     = "1.2"
 
   validation {
     condition     = contains(["1.0", "1.1", "1.2", "1.3"], var.min_tls_version)
@@ -68,7 +64,6 @@ variable "min_tls_version" {
 variable "browser_integrity_check" {
   description = "Browser Integrity Check status for the zone."
   type        = string
-  default     = "on"
 
   validation {
     condition     = contains(["on", "off"], var.browser_integrity_check)
@@ -79,7 +74,6 @@ variable "browser_integrity_check" {
 variable "bot_fight_mode" {
   description = "Whether Cloudflare Bot Fight Mode should be enabled."
   type        = string
-  default     = "on"
 
   validation {
     condition     = contains(["on", "off"], var.bot_fight_mode)
