@@ -14,7 +14,7 @@ repository's delete-don't-annotate rule.
 
 ## Index
 
-- [0001: Terraform state and guarded drift remediation](0001-terraform-state-and-drift-remediation.md) — Proposed
+- [0001: Terraform state and guarded drift remediation](0001-terraform-state-and-drift-remediation.md) — Accepted
 - [0002: Single-trunk branching](0002-single-trunk-branching.md) — Accepted
 - [0003: Three-token Cloudflare credential model](0003-three-token-credential-model.md) — Accepted
 - [0004: Agent worktree and handoff model](0004-agent-worktree-and-handoff-model.md) — Accepted

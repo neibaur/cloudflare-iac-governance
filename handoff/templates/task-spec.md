@@ -4,6 +4,7 @@
 - **Slot:** wt-0X
 - **Assigned agent:** Codex | Claude | Gemini | Copilot
 - **Base branch:** main
+- **PR group:** the concern-grouped pull request this task lands in
 - **Assigned:** YYYY-MM-DD
 
 ## Objective

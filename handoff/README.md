@@ -33,9 +33,26 @@ a branch, and violating this produces detached HEAD and lock errors across every
    using `handoff/templates/handoff-note.md`. The note is never committed.
 5. **Signal.** The worker sets its status file to `DONE` or `BLOCKED`, then stops.
 6. **Integrate.** The orchestrator reviews the local task branches, applies any fixes, pushes, and
-   opens the pull request to `main`, combining related branches into one pull request when that eases review.
+   opens pull requests to `main`. Prefer several small pull requests, each grouped around one
+   concern, over one pull request that bundles unrelated changes. Tightly coupled work, such as a
+   behavior change and the tests or data it depends on, may share a pull request. See
+   [Pull requests grouped by concern](#pull-requests-grouped-by-concern).
 7. **Release.** The orchestrator deletes the inbox spec and resets the status file to `IDLE`.
 8. **Prune.** After merging, the orchestrator **deletes** the note from `handoff-live/outbox/`.
+
+## Pull requests grouped by concern
+
+The orchestrator plans pull-request groupings when it writes a batch of task specs, and records the
+group in each spec's **PR group** field. A concern is one reason for change that a reviewer can hold
+in mind at once: a behavior change with its tests, a CI change, or a documentation update.
+
+This is the encouraged default, not a hard rule. It exists because a large pull request that mixes
+unrelated changes is reviewed in fragments. Human and automated reviewers then surface its gaps
+across many rounds instead of all at once, which makes gaps harder to anticipate before review.
+
+When one group depends on another, open the dependency first. Keep every statement in each pull
+request true regardless of which pull request merges first, or state the required merge order in
+the pull request description.
 
 ## Completion notes never enter the repository
 
