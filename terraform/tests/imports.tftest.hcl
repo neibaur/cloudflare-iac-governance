@@ -77,6 +77,21 @@ run "imports_cover_every_resource_for_two_domains" {
   }
 
   assert {
+    condition = jsonencode(keys(local.import_zone_settings)) == jsonencode(sort(flatten([
+      for domain_name in ["first.example", "second.example"] : [
+        for control in values(module.security_control_catalog.managed_controls) :
+        "${domain_name}/${control.setting_id}" if control.resource == "cloudflare_zone_setting"
+      ]
+    ]))) && jsonencode(keys(local.import_bot_management)) == jsonencode(["first.example", "second.example"])
+    error_message = "Imports must target exactly each domain's catalog zone settings and its bot management."
+  }
+
+  assert {
+    condition     = local.import_zone_settings["second.example/ssl"].zone_id == "023e105f4ecef8ad9ca31a8372d0c354" && local.import_bot_management["second.example"].zone_id == "023e105f4ecef8ad9ca31a8372d0c354"
+    error_message = "Each import must use its own domain's zone ID."
+  }
+
+  assert {
     condition = alltrue([
       for setting in values(local.import_zone_settings) :
       setting.zone_id != "" && setting.setting_id != "" &&

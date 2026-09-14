@@ -7,12 +7,17 @@ variable "cloudflare_account_id" {
 
 variable "domains" {
   description = "Inventory of domain names and their Cloudflare zone IDs."
-  type = map(object({
-    zone_id = string
-  }))
+  # A map rather than an object type: Terraform silently discards undeclared object attributes, so an
+  # inventory still carrying per-domain overrides would lose them without an error.
+  type = map(map(string))
 
   validation {
-    condition     = alltrue([for domain in values(var.domains) : trimspace(domain.zone_id) != ""])
+    condition     = alltrue([for domain in values(var.domains) : jsonencode(keys(domain)) == jsonencode(["zone_id"])])
+    error_message = "Each domains entry must contain only zone_id. Move per-domain security overrides to security_overrides."
+  }
+
+  validation {
+    condition     = alltrue([for domain in values(var.domains) : trimspace(lookup(domain, "zone_id", "")) != ""])
     error_message = "Every inventory zone_id must be non-empty."
   }
 

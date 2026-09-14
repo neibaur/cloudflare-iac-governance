@@ -123,6 +123,23 @@ run "empty_override_is_rejected" {
   ]
 }
 
+run "override_inside_inventory_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "legacy.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c357"
+        ssl     = "strict"
+      }
+    }
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
 run "override_for_unknown_domain_is_rejected" {
   command = plan
 
