@@ -156,11 +156,16 @@ R2 does not document S3 object versioning, so recovery relies on locked backup c
 - **Backups:** before any state-writing operation, copy the live state object to
   `backups/<UTC timestamp>-<random suffix>.tfstate`. The random suffix guarantees a new key even
   for two copies in the same second, because the bucket lock rejects overwriting an existing backup.
+  The copy must run inside the same serialization boundary as the state write it protects: after
+  Terraform's `.tflock` is held or in the same serialized GitHub Actions job and concurrency group
+  as the apply.
 - **Bucket lock rule:** on the bucket's **Settings** tab, a rule on the `backups/` prefix with a
-  30-day retention stops any backup being deleted or overwritten for 30 days. That includes deletion
-  with a leaked key.
-- **Lifecycle rule:** a rule on `backups/` deletes copies after 90 days. The lifecycle expiry must
-  be longer than the lock retention.
+  90-day retention stops any backup being deleted or overwritten for 90 days. A bucket-scoped key
+  can read and write `backups/`, so only the lock protects a backup from deletion with a leaked key;
+  aligning the lock with most of the retention period leaves only a short unlocked window before
+  expiry.
+- **Lifecycle rule:** a rule on `backups/` deletes copies after 100 days. The lifecycle expiry must
+  stay longer than the lock retention because a lifecycle rule cannot delete a locked object.
 
 Never apply a bucket lock rule to `state/` or to the whole bucket. Terraform overwrites the live
 state and deletes its `.tflock` during normal operation, and a lock would block both.

@@ -140,9 +140,16 @@ contact R2. Operators supply those non-secret values through an ignored `backend
 explicit remote initialization.
 
 R2 does not document object versioning, so state recovery uses locked backup copies. Before any
-state-writing operation, copy the live state to a new key under `backups/`. An R2 bucket lock rule on
-`backups/` retains each copy for 30 days, and a lifecycle rule expires copies after 90 days. No lock
-rule covers the live state key or its `.tflock`, which Terraform overwrites and deletes.
+state-writing operation, copy the live state to a new key under `backups/`. The copy must run inside
+the same serialization boundary as the state write it protects: after Terraform's `.tflock` is held
+or in the same serialized GitHub Actions job and concurrency group as the apply. Otherwise,
+overlapping workflows can both back up the same old state and fail to capture the second write's
+pre-change state. An R2 bucket lock rule on `backups/` retains each copy for 90 days, and a lifecycle
+rule expires copies after 100 days. A bucket-scoped key can read and write `backups/`, so only the
+lock protects a backup from deletion with a leaked key; aligning the lock with most of the retention
+period leaves only a short unlocked window before expiry. The lifecycle expiry stays longer than the
+lock retention because a lifecycle rule cannot delete a locked object. No lock rule covers the live
+state key or its `.tflock`, which Terraform overwrites and deletes.
 
 HCP Terraform is the fallback if a later lock acceptance run fails. Its 500-resource Free limit does
 not fit the expected state.
@@ -294,10 +301,12 @@ Each phase is one reviewable pull request and must pass the repository quality g
    delete, or replacement actions. The operator supplies/rotates `REAL_TFVARS` and privately checks
    the inventory.
 4. **First adoption.** Add a one-time environment-gated workflow/runbook that applies only the
-   reviewed import plan. Acceptance: the operator performs the first import apply, state contains
-   each intended object exactly once, and the immediate full refresh plan returns exit 0. This is
-   the only phase whose acceptance requires the first import apply; rollback uses a reviewed state
-   version/recovery procedure, never manual state editing.
+   reviewed import plan and runs the backup copy inside the same serialization boundary as the state
+   write it protects. Acceptance: the operator performs the first import apply, every backup copy
+   uses that serialization boundary, state contains each intended object exactly once, and the
+   immediate full refresh plan returns exit 0. This is the only phase whose acceptance requires the
+   first import apply; rollback uses a reviewed state version/recovery procedure, never manual state
+   editing.
 5. **Scheduled drift detection.** Replace state-less CI planning with locked remote-state planning,
    detailed exit codes, sanitized summaries, concurrency, and alerts. Acceptance: scheduled no-drift,
    safe-drift, error, and simulated-rate-limit cases produce the expected result without exposing
