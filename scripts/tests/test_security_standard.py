@@ -6,12 +6,13 @@ from typing import cast
 import pytest
 
 from scripts.cloudflare_client import (
-    CSV_COLUMN_BY_CONTROL,
-    SECURITY_CSV_HEADERS,
     CloudflareAuditor,
+    csv_column,
+    security_csv_headers,
 )
 from scripts.security_standard import (
     DEFAULT_STANDARD_PATH,
+    SecurityControl,
     SecurityStandardError,
     load_security_standard,
 )
@@ -140,6 +141,37 @@ def test_real_standard_loads_the_six_controls_in_order():
                 valid_control(),
             ],
         },
+        {
+            "schema_version": 1,
+            "controls": [{**valid_control(), "resource": ["cloudflare_zone_setting"]}],
+        },
+        {
+            "schema_version": 1,
+            "controls": [{**valid_control(), "resource": {"type": "cloudflare_zone_setting"}}],
+        },
+        {
+            "schema_version": 1,
+            "controls": [valid_control(), {**valid_control(), "key": "ssl_again"}],
+        },
+        {
+            "schema_version": 1,
+            "controls": [
+                {
+                    "key": "bot_fight_mode",
+                    "resource": "cloudflare_bot_management",
+                    "setting_id": None,
+                    "expected": "on",
+                    "auto_correct": False,
+                },
+                {
+                    "key": "bot_second",
+                    "resource": "cloudflare_bot_management",
+                    "setting_id": None,
+                    "expected": "on",
+                    "auto_correct": False,
+                },
+            ],
+        },
     ],
 )
 def test_load_security_standard_rejects_invalid_documents(tmp_path, document):
@@ -172,7 +204,43 @@ def test_default_auditor_matches_policy_and_csv_columns():
     assert auditor.expected_values == {
         control["key"]: control["expected"] for control in policy_controls
     }
-    assert all(
-        CSV_COLUMN_BY_CONTROL.get(control.key, control.key) in SECURITY_CSV_HEADERS
-        for control in auditor.controls
+    assert all(csv_column(control) in auditor.csv_headers for control in auditor.controls)
+
+
+def test_default_csv_headers_keep_the_report_layout():
+    assert security_csv_headers(load_security_standard()) == (
+        "domain_name",
+        "zone_id",
+        "ssl_mode",
+        "always_use_https",
+        "security_level",
+        "bot_fight_mode",
+        "min_tls_version",
+        "browser_check",
+        "is_compliant",
     )
+
+
+def test_csv_headers_grow_with_additional_controls(tmp_path):
+    controls = (
+        *load_security_standard(),
+        SecurityControl("http3", "cloudflare_zone_setting", "http3", "on", False),
+    )
+    headers = security_csv_headers(controls)
+    assert headers[-2:] == ("http3", "is_compliant")
+
+    row = {header: "value" for header in headers}
+    report_path = CloudflareAuditor._write_security_audit_csv([row], tmp_path, headers)
+
+    assert report_path.read_text(encoding="utf-8").splitlines()[0] == ",".join(headers)
+
+
+@pytest.mark.parametrize("key", ["zone_id", "is_compliant", "ssl_mode"])
+def test_csv_headers_reject_colliding_control_columns(key):
+    controls = (
+        *load_security_standard(),
+        SecurityControl(key, "cloudflare_zone_setting", f"{key}_setting", "on", False),
+    )
+
+    with pytest.raises(ValueError, match="unique CSV columns"):
+        security_csv_headers(controls)

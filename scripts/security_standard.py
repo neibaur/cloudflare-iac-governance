@@ -52,6 +52,8 @@ def load_security_standard(path: Path = DEFAULT_STANDARD_PATH) -> tuple[Security
 
     parsed_controls: list[SecurityControl] = []
     control_keys: set[str] = set()
+    setting_ids: set[str] = set()
+    bot_management_controls = 0
     for index, control in enumerate(controls):
         label = f"Security standard control at index {index}"
         if not isinstance(control, dict) or set(control) != _CONTROL_KEYS:
@@ -68,7 +70,7 @@ def load_security_standard(path: Path = DEFAULT_STANDARD_PATH) -> tuple[Security
             raise SecurityStandardError(f"{label} expected must be a non-empty string.")
         if type(auto_correct) is not bool:
             raise SecurityStandardError(f"{label} auto_correct must be a bool.")
-        if resource not in _VALID_RESOURCES:
+        if not isinstance(resource, str) or resource not in _VALID_RESOURCES:
             raise SecurityStandardError(f"{label} resource is not supported.")
         if resource == _ZONE_SETTING_RESOURCE and (
             not isinstance(setting_id, str) or not setting_id
@@ -78,6 +80,18 @@ def load_security_standard(path: Path = DEFAULT_STANDARD_PATH) -> tuple[Security
             raise SecurityStandardError(f"{label} setting_id must be null.")
         if key in control_keys:
             raise SecurityStandardError(f"Security standard contains duplicate control key: {key}.")
+        if isinstance(setting_id, str):
+            if setting_id in setting_ids:
+                raise SecurityStandardError(
+                    f"Security standard contains duplicate setting_id: {setting_id}."
+                )
+            setting_ids.add(setting_id)
+        if resource == _BOT_MANAGEMENT_RESOURCE:
+            bot_management_controls += 1
+            if bot_management_controls > 1:
+                raise SecurityStandardError(
+                    "Security standard may contain at most one cloudflare_bot_management control."
+                )
 
         control_keys.add(key)
         parsed_controls.append(

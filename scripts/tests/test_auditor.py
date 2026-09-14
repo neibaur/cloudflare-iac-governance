@@ -499,6 +499,7 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
             },
         ],
         ANY,
+        auditor.csv_headers,
     )
 
 

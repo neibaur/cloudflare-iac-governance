@@ -16,4 +16,20 @@ variable "domains" {
     browser_integrity_check = optional(string)
     bot_fight_mode          = optional(string)
   }))
+
+  validation {
+    condition = alltrue([
+      for domain in values(var.domains) : alltrue([
+        for override in [
+          domain.ssl,
+          domain.security_level,
+          domain.always_use_https,
+          domain.min_tls_version,
+          domain.browser_integrity_check,
+          domain.bot_fight_mode,
+        ] : override == null ? true : trimspace(override) != ""
+      ])
+    ])
+    error_message = "A per-domain security override must be omitted or set to a non-empty value."
+  }
 }

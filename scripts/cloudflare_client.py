@@ -11,18 +11,31 @@ import httpx
 
 from scripts.security_standard import SecurityControl, expected_values, load_security_standard
 
+# Compatibility mapping: the ssl control keeps its historical CSV column name.
 CSV_COLUMN_BY_CONTROL = {"ssl": "ssl_mode"}
-SECURITY_CSV_HEADERS = (
-    "domain_name",
-    "zone_id",
-    "ssl_mode",
-    "always_use_https",
-    "security_level",
-    "bot_fight_mode",
-    "min_tls_version",
-    "browser_check",
-    "is_compliant",
-)
+# Columns that existed before the policy file, kept first and in their original order so existing
+# report consumers see a stable layout. Any other control column follows in policy order.
+LEGACY_CONTROL_COLUMNS = ("ssl_mode", "always_use_https", "security_level", "bot_fight_mode")
+
+
+def csv_column(control: SecurityControl) -> str:
+    return CSV_COLUMN_BY_CONTROL.get(control.key, control.key)
+
+
+def security_csv_headers(controls: tuple[SecurityControl, ...]) -> tuple[str, ...]:
+    """Return report headers for the configured controls, preserving the legacy column order."""
+    columns = [csv_column(control) for control in controls]
+    reserved = {"domain_name", "zone_id", "is_compliant"}
+    if len(set(columns)) != len(columns) or reserved.intersection(columns):
+        raise ValueError(
+            "Security controls must map to unique CSV columns that do not reuse "
+            "domain_name, zone_id, or is_compliant."
+        )
+    legacy = [column for column in LEGACY_CONTROL_COLUMNS if column in columns]
+    additional = [column for column in columns if column not in LEGACY_CONTROL_COLUMNS]
+    return ("domain_name", "zone_id", *legacy, *additional, "is_compliant")
+
+
 LATEST_SECURITY_REPORT = "security_compliance_report.csv"
 DEFAULT_REPORT_DIR = Path("reports")
 
@@ -60,6 +73,7 @@ class CloudflareAuditor:
         self.base_url = base_url.rstrip("/")
         self.controls = controls if controls is not None else load_security_standard()
         self.expected_values = expected_values(self.controls)
+        self.csv_headers = security_csv_headers(self.controls)
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={
@@ -194,12 +208,7 @@ class CloudflareAuditor:
             }
             is_compliant = int(not deviations)
             row: dict[str, Any] = {"domain_name": zone["name"], "zone_id": zone["id"]}
-            row.update(
-                {
-                    CSV_COLUMN_BY_CONTROL.get(control.key, control.key): settings[control.key]
-                    for control in self.controls
-                }
-            )
+            row.update({csv_column(control): settings[control.key] for control in self.controls})
             row["is_compliant"] = is_compliant
             rows.append(row)
 
@@ -213,7 +222,7 @@ class CloudflareAuditor:
                     }
                 )
 
-        report_path = self._write_security_audit_csv(rows, report_dir)
+        report_path = self._write_security_audit_csv(rows, report_dir, self.csv_headers)
         self._print_security_audit_report(
             len(zones),
             findings,
@@ -448,19 +457,23 @@ class CloudflareAuditor:
         return "\n".join(lines)
 
     @staticmethod
-    def _write_security_audit_csv(rows: list[dict[str, Any]], report_dir: Path) -> Path:
+    def _write_security_audit_csv(
+        rows: list[dict[str, Any]],
+        report_dir: Path,
+        headers: tuple[str, ...],
+    ) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         report_dir.mkdir(parents=True, exist_ok=True)
         report_path = report_dir / f"{timestamp}_security_compliance_report.csv"
         latest_report_path = report_dir / LATEST_SECURITY_REPORT
 
         with report_path.open("w", encoding="utf-8", newline="") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
+            writer = csv.DictWriter(report_file, fieldnames=headers)
             writer.writeheader()
             writer.writerows(rows)
 
         with latest_report_path.open("w", encoding="utf-8", newline="") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
+            writer = csv.DictWriter(report_file, fieldnames=headers)
             writer.writeheader()
             writer.writerows(rows)
 
