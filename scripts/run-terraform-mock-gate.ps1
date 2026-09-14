@@ -17,6 +17,7 @@
       6. terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
     The override is removed on every exit, including failure. The script exits 1 if any step fails.
+    Inherited TF_DATA_DIR, TF_WORKSPACE, and TF_CLI_ARGS* values are ignored for the run.
     CI runs this script in .github/workflows/quality.yml.
 
 .EXAMPLE
@@ -30,6 +31,15 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $terraformDir = Join-Path $RepoRoot 'terraform'
 $override = Join-Path $terraformDir 'ci_backend_override.tf'
+
+# Inherited values could point Terraform at another checkout's .terraform directory, which may be
+# initialized against remote state, or inject extra arguments. Cleared for the run, restored after.
+$terraformEnv = @(
+    'TF_DATA_DIR', 'TF_WORKSPACE', 'TF_CLI_ARGS',
+    'TF_CLI_ARGS_fmt', 'TF_CLI_ARGS_init', 'TF_CLI_ARGS_validate', 'TF_CLI_ARGS_test', 'TF_CLI_ARGS_plan'
+)
+$savedEnv = @{}
+foreach ($name in $terraformEnv) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
 
 function Assert-NoState {
     if (Test-Path (Join-Path $terraformDir 'terraform.tfstate*')) {
@@ -46,6 +56,7 @@ function Invoke-Terraform([string[]]$Arguments) {
 }
 
 try {
+    foreach ($name in $terraformEnv) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
     Assert-NoState
     Invoke-Terraform @('fmt', '-check', '-recursive')
 
@@ -64,6 +75,7 @@ catch {
 }
 finally {
     Remove-Item -LiteralPath $override -ErrorAction SilentlyContinue
+    foreach ($name in $terraformEnv) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name], 'Process') }
 }
 
 Write-Host 'Terraform mock gate passed.' -ForegroundColor Green

@@ -263,6 +263,20 @@ function Write-EnvLines([string]$Path, $Lines) {
     [System.IO.File]::WriteAllText($Path, $content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+# An existing worktree .env is kept, but never with variables outside the allowlist. A worktree
+# bootstrapped before the allowlist existed may hold a full copy of the operator .env. Returns $true
+# when it removed anything.
+function Remove-NonAllowlistedEnv {
+    $dst = Join-Path $RepoRoot '.env'
+    if (-not (Test-Path -LiteralPath $dst)) { return $false }
+    $existing = Split-EnvByAllowlist -Path $dst
+    if (-not $existing.RemovedNames.Count) { return $false }
+    Write-EnvLines -Path $dst -Lines $existing.Kept
+    Write-Host "  cleaned .env: removed $($existing.RemovedNames -join ', ') (not allowlisted)" -ForegroundColor Yellow
+    $script:TouchedPaths += '.env'
+    return $true
+}
+
 function Copy-EnvAllowlist {
     param(
         [Parameter(Mandatory = $true)][string]$SourceRelative
@@ -276,14 +290,7 @@ function Copy-EnvAllowlist {
         return
     }
     if ((Test-Path -LiteralPath $dst) -and -not $Force) {
-        # An existing .env is kept, but never with variables outside the allowlist. A worktree
-        # bootstrapped before the allowlist existed may hold a full copy of the operator .env.
-        $existing = Split-EnvByAllowlist -Path $dst
-        if ($existing.RemovedNames.Count) {
-            Write-EnvLines -Path $dst -Lines $existing.Kept
-            Write-Host "  cleaned .env: removed $($existing.RemovedNames -join ', ') (not allowlisted)" -ForegroundColor Yellow
-        }
-        else {
+        if (-not (Remove-NonAllowlistedEnv)) {
             Write-Host "  exists  .env (use -Force to overwrite)" -ForegroundColor DarkGray
         }
         $script:TouchedPaths += '.env'
@@ -348,6 +355,13 @@ if ($wantAnySecret) {
     if (-not $SourceRepo -or -not (Test-Path $SourceRepo)) {
         throw "Cannot copy secrets: source clone not found. Pass -SourceRepo <path>."
     }
+    # Copying onto the source would rewrite the operator's own files: the .env allowlist would strip
+    # its R2 keys and other operator-only settings.
+    $resolvedSource = [System.IO.Path]::GetFullPath($SourceRepo).TrimEnd('\', '/')
+    $resolvedTarget = [System.IO.Path]::GetFullPath($RepoRoot).TrimEnd('\', '/')
+    if ($resolvedSource -ieq $resolvedTarget) {
+        throw "Cannot copy secrets: the source clone is this repository. Run the bootstrap from a worktree."
+    }
 
     Write-Host ""
     Write-Host "Copying secret material from: $SourceRepo" -ForegroundColor Yellow
@@ -388,6 +402,7 @@ if ($wantAnySecret) {
         }
         else {
             Write-Host "  skip    .env (neither .env.agent nor .env present in source)" -ForegroundColor DarkGray
+            $null = Remove-NonAllowlistedEnv
         }
     }
 

@@ -13,7 +13,7 @@ Describe the change and why it is needed.
 ## Validation checklist
 
 - [ ] python scripts/run_all_checks.py
-- [ ] scripts/run-terraform-mock-gate.ps1 (fmt, validate, test, and the mock plan against a local backend; refuses when `terraform/*.tfstate*` exists)
+- [ ] `.\scripts\run-terraform-mock-gate.ps1` (fmt, validate, test, and the mock plan against a local backend; refuses when `terraform/*.tfstate*` exists)
 
 ## Terraform safety checklist
 

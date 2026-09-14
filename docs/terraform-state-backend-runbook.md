@@ -29,6 +29,8 @@ Credentials come only from environment variables.
    - `terraform-state-ci`, for GitHub Actions
    - `terraform-state-operator`, for local work
 
+   R2 tokens can't be narrowed to an object prefix, so each key reaches the whole state bucket.
+   The bucket lock rule described under recovery is what protects backups from a leaked key.
    Leave client IP filtering empty, because GitHub runner addresses change. Cloudflare shows the
    secret access key only once, so store each key in a password manager immediately.
 3. Add the operator key and the bucket name to the ignored `.env` in the primary clone.
@@ -104,13 +106,20 @@ root. Never type or paste a key into a command: PowerShell's PSReadLine saves co
 disk. This loop copies the values without displaying them.
 
 ```powershell
+# Clear any keys already in the shell, so a missing or mistyped .env entry can't leave a stale key.
+# A leftover AWS session token would also be sent with the R2 keys and fail authentication.
+Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY, Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
+$keys = @{}
 foreach ($line in Get-Content .env) {
     if ($line -match '^\s*TF_STATE_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)\s*=\s*(.+?)\s*$') {
-        Set-Item "Env:AWS_$($Matches[1])" $Matches[2].Trim('"').Trim("'")
+        $keys[$Matches[1]] = $Matches[2].Trim('"').Trim("'")
     }
 }
-# A leftover AWS session token would be sent with the R2 keys and fail authentication.
-Remove-Item Env:AWS_SESSION_TOKEN -ErrorAction SilentlyContinue
+if (-not $keys['ACCESS_KEY_ID'] -or -not $keys['SECRET_ACCESS_KEY']) {
+    throw '.env must define both TF_STATE_ACCESS_KEY_ID and TF_STATE_SECRET_ACCESS_KEY.'
+}
+$env:AWS_ACCESS_KEY_ID = $keys['ACCESS_KEY_ID']
+$env:AWS_SECRET_ACCESS_KEY = $keys['SECRET_ACCESS_KEY']
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
 ```

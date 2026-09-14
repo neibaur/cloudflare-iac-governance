@@ -101,7 +101,10 @@ $runId = [guid]::NewGuid().ToString('N').Substring(0, 12)
 Write-Output "Run ID: $runId (disposable key lock-test/$runId/terraform.tfstate)"
 $work = Join-Path ([System.IO.Path]::GetTempPath()) "r2-lock-test-$runId"
 $savedEnv = @{}
-foreach ($name in 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') {
+# TF_DATA_DIR, TF_WORKSPACE, and TF_CLI_ARGS* are cleared too: inherited values could send init or plan to
+# another checkout's .terraform directory or inject arguments.
+$terraformEnv = @('TF_DATA_DIR', 'TF_WORKSPACE', 'TF_CLI_ARGS', 'TF_CLI_ARGS_init', 'TF_CLI_ARGS_plan')
+foreach ($name in @('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN', 'CLOUDFLARE_API_TOKEN', 'TF_IN_AUTOMATION') + $terraformEnv) {
     $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
 }
 $results = [ordered]@{}
@@ -168,6 +171,7 @@ try {
     $env:TF_IN_AUTOMATION = '1'
     # An inherited AWS session token would be sent with the R2 keys and fail authentication.
     Remove-Item Env:AWS_SESSION_TOKEN, Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+    foreach ($name in $terraformEnv) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
 
     New-Item -ItemType Directory $work | Out-Null
     Copy-Item (Join-Path $RepoRoot 'terraform\backend.tf') "$work\backend.tf"

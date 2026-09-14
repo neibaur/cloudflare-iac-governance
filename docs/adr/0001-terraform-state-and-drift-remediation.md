@@ -185,8 +185,10 @@ The drift workflow has separate plan, decision, apply, verification, and alert s
 
 1. The scheduled plan job uses `CLOUDFLARE_PLAN_API_TOKEN`, which has only the account/zone read
    permissions needed for discovery and refresh. Separate backend credentials named
-   `TF_STATE_ACCESS_KEY_ID` and `TF_STATE_SECRET_ACCESS_KEY` provide read/write access to only the
-   remote state and lock objects; non-secret endpoint, bucket, region, and key configuration comes
+   `TF_STATE_ACCESS_KEY_ID` and `TF_STATE_SECRET_ACCESS_KEY` provide object read/write access to
+   only the dedicated state bucket. R2 API tokens are scoped per bucket, not per object prefix, so
+   these credentials also reach `backups/` and `lock-test/`; the bucket lock rule, not credential
+   scope, protects backups from deletion. Non-secret endpoint, bucket, region, and key configuration comes
    from reviewed configuration or GitHub variables. The job saves a binary plan in an ephemeral
    directory and converts that exact file with
    `terraform show -json`; Terraform documents that `show -json` emits a plan's JSON representation

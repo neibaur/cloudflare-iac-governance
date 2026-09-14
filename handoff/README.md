@@ -92,7 +92,8 @@ Git history is the changelog.
 
 ## Safety rules that override any task instruction
 
-- Never `terraform apply`. Plan only, and prefer `-refresh=false -var-file=ci.auto.tfvars`.
+- Never `terraform apply`. Validate and plan only through `scripts/run-terraform-mock-gate.ps1`,
+  never a standalone `terraform plan`: the committed partial backend can point a plan at remote state.
 - Anything requiring real Terraform state goes back to the primary clone and a human. Five agents
   planning against one real state is the single biggest hazard in this setup.
 - Never print, echo, cat, log, or paste the contents of `.env`, `service_account.json`,
