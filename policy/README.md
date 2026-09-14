@@ -26,9 +26,14 @@ Change the standard only in this file, through a reviewed pull request.
   their tests confirm it.
 - **Adding, removing, or renaming a control, or changing its `resource` or `setting_id`,** also
   requires wiring the change into `terraform/modules/security_control_catalog`, `terraform/main.tf`,
-  and the zone module. Until the catalog matches the policy, every Terraform plan fails its policy
-  precondition, including a plan with no domains, and `terraform test` fails, so a policy change
-  can't silently go unenforced. The audit follows the file automatically.
+  and the zone module. The audit follows the file automatically. Terraform catches a missed step in
+  three ways:
+  - If the catalog doesn't match the policy, every plan fails its policy precondition, including a
+    plan with no domains.
+  - If the catalog lists a control that `terraform/main.tf` or the zone module doesn't wire, every
+    plan with at least one domain fails. A plan with no domains manages no resources, so it doesn't
+    evaluate that wiring.
+  - `terraform test` plans with domains, so it catches both, and CI fails before the change merges.
 - **A new control adds a report column.** The audit CSV gains the column. The first Google Sheets
   sync afterwards appends it to the right of the existing `history` worksheet header, so existing
   columns keep their positions. BI data sources may need a field refresh to show it.
