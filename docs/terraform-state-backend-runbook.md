@@ -31,7 +31,9 @@ Credentials come only from environment variables.
 
    Leave client IP filtering empty, because GitHub runner addresses change. Cloudflare shows the
    secret access key only once, so store each key in a password manager immediately.
-3. Add the operator key and the bucket name to the ignored `.env` in the primary clone:
+3. Add the operator key and the bucket name to the ignored `.env` in the primary clone.
+   `scripts/bootstrap-worktree.ps1 -WithCloudflareToken` copies only `CLOUDFLARE_API_TOKEN` and
+   `CLOUDFLARE_ACCOUNT_ID` into a worktree, so these values never reach an agent:
 
    ```
    TF_STATE_ACCESS_KEY_ID=<operator access key ID>
@@ -115,38 +117,26 @@ terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
 When you're finished, clear the keys from the shell:
 `Remove-Item Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY`.
 
-Removing `ci_backend_override.tf` first matters. If a mock gate run was interrupted and left the
-file behind, it keeps Terraform on the local backend.
+Removing `ci_backend_override.tf` first matters. If a mock gate run was killed before its cleanup
+ran, the leftover file keeps Terraform on the local backend.
 
 Don't run a migration or an apply until ADR 0001 phases 3 and 4 authorize one.
 
 ## Run the local mock gate safely
 
-The mock gate must never use `backend.hcl` or R2 credentials. It writes an ignored local-backend
-override, so it can use `ci.auto.tfvars` without contacting R2. First confirm that no
-`terraform/terraform.tfstate*` file exists, then run from the repository root:
+The mock gate must never use `backend.hcl` or R2 credentials. From the repository root, run:
 
 ```powershell
-@'
-terraform {
-  backend "local" {}
-}
-'@ | Set-Content terraform/ci_backend_override.tf -NoNewline -Encoding ascii
-terraform -chdir=terraform init -backend=false
-terraform -chdir=terraform validate
-terraform -chdir=terraform test
-terraform -chdir=terraform init -reconfigure
-if (Test-Path terraform/terraform.tfstate*) {
-    Write-Error "Terraform state found: never plan mock inputs against real state."
-} else {
-    terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
-}
-Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
+.\scripts\run-terraform-mock-gate.ps1
 ```
 
-The plan is expected to report `12 to add, 0 to destroy`. Always run the full sequence. After a
-remote initialization, a standalone `terraform plan` with `ci.auto.tfvars` would run against the
-real remote state.
+The script writes an ignored local-backend override, so it can use `ci.auto.tfvars` without
+contacting R2, and removes it on every exit. It refuses to run when `terraform/terraform.tfstate*`
+exists and stops at the first failing step. The plan is expected to report
+`12 to add, 0 to destroy`.
+
+After a remote initialization, never run a standalone `terraform plan` with `ci.auto.tfvars`: it
+would run against the real remote state. The gate script re-initializes to the local backend first.
 
 ## State recovery
 

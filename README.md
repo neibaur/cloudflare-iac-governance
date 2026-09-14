@@ -93,26 +93,12 @@ available.
 
 ```powershell
 .venv\Scripts\python scripts/run_all_checks.py
-terraform -chdir=terraform fmt -check -recursive
-@'
-terraform {
-  backend "local" {}
-}
-'@ | Set-Content terraform/ci_backend_override.tf -NoNewline -Encoding ascii
-terraform -chdir=terraform init -backend=false
-terraform -chdir=terraform validate
-terraform -chdir=terraform test
-terraform -chdir=terraform init -reconfigure
-if (Test-Path terraform/terraform.tfstate*) {
-    Write-Error "Terraform state found: never plan mock inputs against real state."
-} else {
-    terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
-}
-Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
+.\scripts\run-terraform-mock-gate.ps1
 ```
 
-Only run the `ci.auto.tfvars` plan in a safe mock-state/no-real-state context. The ignored
-override keeps this gate on a local backend and therefore prevents it from contacting R2.
+`scripts/run-terraform-mock-gate.ps1` runs `fmt`, `validate`, `test`, and the `ci.auto.tfvars` plan
+against a local backend, so it never contacts R2. It refuses to run when Terraform state exists and
+stops at the first failure.
 For the R2 state-backend setup and its separate operator commands, see the
 [Terraform state backend runbook](docs/terraform-state-backend-runbook.md).
 

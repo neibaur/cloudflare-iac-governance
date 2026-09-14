@@ -23,12 +23,16 @@
     misconfigured .gitignore is reported loudly instead of silently exposing a credential.
 
 .PARAMETER WithCloudflareToken
-    Provision the worktree '.env' containing the Cloudflare API token.
+    Provision the worktree '.env' containing the Cloudflare API token and account ID.
 
     Prefers '.env.agent' from the source clone, which should hold a read-only, narrowly scoped
     agent token. Falls back to the source clone's '.env' -- the operator's unrestricted token --
     only with a loud warning. The destination is always written as '.env' so existing code paths
     (python-dotenv, scripts, terraform wrappers) work unchanged.
+
+    Only CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are copied from either file. Everything else
+    in the operator's '.env', such as R2 state backend keys or the Google Sheet ID, stays in the
+    primary clone.
 
     A second warning fires when '.env.agent' exists but carries the same CLOUDFLARE_API_TOKEN
     value as '.env', which happens when the agent file was created by copying the operator file.
@@ -224,6 +228,49 @@ function Copy-SecretFile {
 #
 # Parsing is deliberately literal: Trim, IndexOf, StartsWith and Substring only. The -match and
 # -replace operators take regex, and a token is arbitrary text that may contain metacharacters.
+# The only variables a worktree '.env' may receive. The operator '.env' also holds credentials that
+# must never reach an agent, such as the R2 state backend keys.
+$WorktreeEnvAllowlist = @('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID')
+
+function Copy-EnvAllowlist {
+    param(
+        [Parameter(Mandatory = $true)][string]$SourceRelative
+    )
+
+    $src = Join-Path $SourceRepo $SourceRelative
+    $dst = Join-Path $RepoRoot '.env'
+
+    if (-not (Test-Path -LiteralPath $src)) {
+        Write-Host "  skip    $SourceRelative (not present in source)" -ForegroundColor DarkGray
+        return
+    }
+    if ((Test-Path -LiteralPath $dst) -and -not $Force) {
+        Write-Host "  exists  .env (use -Force to overwrite)" -ForegroundColor DarkGray
+        $script:TouchedPaths += '.env'
+        return
+    }
+
+    $kept = New-Object System.Collections.Generic.List[string]
+    $keptNames = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Get-Content -LiteralPath $src)) {
+        $trimmed = $line.Trim()
+        if ($trimmed.StartsWith('export ')) { $trimmed = $trimmed.Substring(7).Trim() }
+        $sep = $trimmed.IndexOf('=')
+        if ($sep -lt 1) { continue }
+        $name = $trimmed.Substring(0, $sep).Trim()
+        if ($WorktreeEnvAllowlist -contains $name) {
+            $kept.Add($trimmed)
+            $keptNames.Add($name)
+        }
+    }
+
+    $content = if ($kept.Count) { ($kept -join "`n") + "`n" } else { '' }
+    [System.IO.File]::WriteAllText($dst, $content, (New-Object System.Text.UTF8Encoding($false)))
+    $names = if ($keptNames.Count) { $keptNames -join ', ' } else { 'no allowlisted variables' }
+    Write-Host "  copied  $SourceRelative -> .env ($names only)" -ForegroundColor Green
+    $script:TouchedPaths += '.env'
+}
+
 function Get-EnvValueHash {
     param(
         [Parameter(Mandatory = $true)][string]$Path,
@@ -303,7 +350,7 @@ if ($wantAnySecret) {
                 Write-Host "  Continuing with the bootstrap." -ForegroundColor Yellow
             }
 
-            Copy-SecretFile -SourceRelative '.env.agent' -DestinationRelative '.env'
+            Copy-EnvAllowlist -SourceRelative '.env.agent'
         }
         elseif (Test-Path $sourceOperatorEnv) {
             Write-Host ""
@@ -311,7 +358,7 @@ if ($wantAnySecret) {
             Write-Host "  Falling back to .env, the operator's UNRESTRICTED Cloudflare token." -ForegroundColor Yellow
             Write-Host "  A read-only agent token in .env.agent is strongly preferred: it limits" -ForegroundColor Yellow
             Write-Host "  the blast radius of anything an agent does in this worktree." -ForegroundColor Yellow
-            Copy-SecretFile -SourceRelative '.env' -DestinationRelative '.env'
+            Copy-EnvAllowlist -SourceRelative '.env'
         }
         else {
             Write-Host "  skip    .env (neither .env.agent nor .env present in source)" -ForegroundColor DarkGray
