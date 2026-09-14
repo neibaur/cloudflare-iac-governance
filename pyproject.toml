@@ -16,6 +16,7 @@ ignore_missing_imports = true
 pythonpath = ["."]
 cache_dir = ".pytest_cache"
 addopts = [
+  "--basetemp=.pytest_tmp",
   "--cov=scripts",
   "--cov=run_tools",
   "--cov-report=term-missing",

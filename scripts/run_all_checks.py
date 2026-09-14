@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import subprocess  # nosec B404
 import sys
+from pathlib import Path
+
+REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 
 CHECKS = (
     ("Ruff lint", [sys.executable, "-m", "ruff", "check", "."]),
@@ -26,7 +29,7 @@ CHECKS = (
 def main() -> int:
     for name, command in CHECKS:
         print(f"Running {name}...", flush=True)
-        completed = subprocess.run(command)  # nosec B603
+        completed = subprocess.run(command, cwd=REPOSITORY_ROOT)  # nosec B603
         if completed.returncode != 0:
             print(f"{name} failed with exit code {completed.returncode}.", file=sys.stderr)
             return completed.returncode
