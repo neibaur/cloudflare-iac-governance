@@ -17,7 +17,8 @@
       6. terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
     The override is removed on every exit, including failure. The script exits 1 if any step fails.
-    Inherited TF_DATA_DIR, TF_WORKSPACE, and TF_CLI_ARGS* values are ignored for the run.
+    Inherited TF_DATA_DIR, TF_WORKSPACE, TF_CLI_ARGS*, and TF_VAR_* values are ignored for the run, so
+    the plan and tests use only ci.auto.tfvars and the test files' own variables.
     CI runs this script in .github/workflows/quality.yml.
 
 .EXAMPLE
@@ -33,13 +34,18 @@ $terraformDir = Join-Path $RepoRoot 'terraform'
 $override = Join-Path $terraformDir 'ci_backend_override.tf'
 
 # Inherited values could point Terraform at another checkout's .terraform directory, which may be
-# initialized against remote state, or inject extra arguments. Cleared for the run, restored after.
-$terraformEnv = @(
-    'TF_DATA_DIR', 'TF_WORKSPACE', 'TF_CLI_ARGS',
-    'TF_CLI_ARGS_fmt', 'TF_CLI_ARGS_init', 'TF_CLI_ARGS_validate', 'TF_CLI_ARGS_test', 'TF_CLI_ARGS_plan'
+# initialized against remote state, inject extra arguments, or set input variables that ci.auto.tfvars
+# doesn't. Cleared for the run, restored after.
+$terraformEnv = @('TF_DATA_DIR', 'TF_WORKSPACE') + @(
+    [Environment]::GetEnvironmentVariables('Process').Keys |
+        Where-Object { $_ -match '^TF_(?:CLI_ARGS(?:_.*)?|VAR_.+)$' }
 )
-$savedEnv = @{}
-foreach ($name in $terraformEnv) { $savedEnv[$name] = [Environment]::GetEnvironmentVariable($name, 'Process') }
+$savedEnv = foreach ($name in $terraformEnv) {
+    [pscustomobject]@{
+        Name  = $name
+        Value = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+}
 
 function Assert-NoState {
     if (Test-Path (Join-Path $terraformDir 'terraform.tfstate*')) {
@@ -75,7 +81,9 @@ catch {
 }
 finally {
     Remove-Item -LiteralPath $override -ErrorAction SilentlyContinue
-    foreach ($name in $terraformEnv) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name], 'Process') }
+    foreach ($environment in $savedEnv) {
+        [Environment]::SetEnvironmentVariable($environment.Name, $environment.Value, 'Process')
+    }
 }
 
 Write-Host 'Terraform mock gate passed.' -ForegroundColor Green
