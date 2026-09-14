@@ -14,7 +14,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
-cache_dir = ".pytest_cache"
+# A nested cache_dir keeps pytest's temporary cache-writing directories inside .pytest_cache.
+cache_dir = ".pytest_cache/data"
 addopts = [
   "--basetemp=.pytest_tmp",
   "--cov=scripts",

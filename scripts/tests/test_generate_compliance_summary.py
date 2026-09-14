@@ -1,4 +1,3 @@
-import shutil
 from pathlib import Path
 
 import pytest
@@ -18,15 +17,8 @@ class FakeReportRoot:
 
 
 @pytest.fixture
-def report_workspace():
-    root = Path("pytest-cache-files-dataops")
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir()
-
-    yield root
-
-    shutil.rmtree(root, ignore_errors=True)
+def report_workspace(tmp_path):
+    return tmp_path
 
 
 def test_discover_reports_uses_only_utc_stamped_reports():
