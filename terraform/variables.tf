@@ -17,8 +17,17 @@ variable "domains" {
   }
 
   validation {
-    condition     = alltrue([for domain in values(var.domains) : trimspace(lookup(domain, "zone_id", "")) != ""])
-    error_message = "Every inventory zone_id must be non-empty."
+    condition = alltrue([
+      for domain in values(var.domains) :
+      lookup(domain, "zone_id", "") != "" && trimspace(lookup(domain, "zone_id", "")) == lookup(domain, "zone_id", "")
+    ])
+    error_message = "Every inventory zone_id must be non-empty and have no surrounding whitespace, because it becomes part of each import ID."
+  }
+
+  # Two domains sharing a zone would import the same Cloudflare objects into two resource addresses.
+  validation {
+    condition     = length(distinct([for domain in values(var.domains) : lookup(domain, "zone_id", "")])) == length(var.domains)
+    error_message = "Every inventory zone_id must be unique."
   }
 
   validation {
@@ -53,6 +62,14 @@ variable "security_overrides" {
       ])
     ])
     error_message = "A per-domain security override must be omitted or set to a non-empty value."
+  }
+
+  validation {
+    condition = alltrue([
+      for override_set in values(var.security_overrides) :
+      anytrue([for override in values(override_set) : override != null])
+    ])
+    error_message = "Each security_overrides entry must set at least one override. Remove entries with no overrides."
   }
 }
 

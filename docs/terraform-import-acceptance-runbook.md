@@ -29,13 +29,18 @@ phase 3 does not authorize applying it.
    `-var-file=terraform.tfvars` is required. Terraform loads `ci.auto.tfvars` automatically after
    `terraform.tfvars`, so without it the mock inventory replaces the real one.
 
-5. Accept the plan only when its summary reports exactly `6 x <number of inventory zones>` imports
-   and `0 to add, 0 to change, 0 to destroy`. Read only the aggregate counts; do not copy domain
+5. Accept the plan only when its summary reports exactly one import per zone setting in
+   `policy/zone-security-standard.json` plus one bot management import, for every inventory zone
+   (6 per zone with the current policy), and `0 to add, 0 to change, 0 to destroy`. Read only the aggregate counts; do not copy domain
    names or zone IDs into tickets, logs, or review material.
 
-6. An update in this plan means the live zone differs from the policy or a fixed zone-module value,
-   such as `enable_js = true` for bot management. It is not an import failure. Resolve it with a
-   `security_overrides` entry or a reviewed policy decision; never apply it as part of this phase.
+6. An update in this plan means the live zone differs from the configuration. It is not an import
+   failure, and it is never applied as part of this phase. Resolve it according to its source:
+   - A policy control, such as SSL mode or Bot Fight Mode, differs: add a `security_overrides` entry
+     for that domain or make a reviewed policy decision.
+   - A fixed zone-module value differs, such as `enable_js = true` for bot management:
+     `security_overrides` can't change it. It needs a separately reviewed change to
+     `terraform/modules/cloudflare_zone_config`.
 
 7. Do not apply the saved plan. Phase 4 performs the first import apply. The plan file contains
    real zone identities and configuration: delete it once the counts are recorded, and clear

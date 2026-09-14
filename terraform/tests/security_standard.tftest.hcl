@@ -123,6 +123,136 @@ run "empty_override_is_rejected" {
   ]
 }
 
+run "every_override_field_wins_for_its_domain_only" {
+  command = plan
+
+  variables {
+    domains = {
+      "values.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c360"
+      }
+      "https.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c365"
+      }
+      "browser.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c366"
+      }
+      "bot.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c367"
+      }
+      "plain.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c361"
+      }
+    }
+
+    # The on/off controls share their only non-policy value, so each gets its own domain; a wrong or
+    # swapped mapping in terraform/main.tf then changes a domain that didn't override that control.
+    security_overrides = {
+      "values.example" = {
+        ssl             = "strict"
+        security_level  = "high"
+        min_tls_version = "1.3"
+      }
+      "https.example" = {
+        always_use_https = "off"
+      }
+      "browser.example" = {
+        browser_integrity_check = "off"
+      }
+      "bot.example" = {
+        bot_fight_mode = "off"
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for domain, changed in {
+        "values.example"  = { ssl = "strict", security_level = "high", min_tls_version = "1.3" }
+        "https.example"   = { always_use_https = "off" }
+        "browser.example" = { browser_check = "off" }
+        "bot.example"     = { bot_fight_mode = "off" }
+        "plain.example"   = {}
+      } :
+      jsonencode(module.cloudflare_zone_config[domain].controls) == jsonencode(merge(output.security_standard, changed))
+    ])
+    error_message = "Each security_overrides field must set only its own control, and only for its own domain."
+  }
+}
+
+run "empty_inventory_zone_id_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "empty.example" = {
+        zone_id = ""
+      }
+    }
+    security_overrides = {}
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
+run "padded_inventory_zone_id_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "padded.example" = {
+        zone_id = " 023e105f4ecef8ad9ca31a8372d0c362"
+      }
+    }
+    security_overrides = {}
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
+run "duplicate_inventory_zone_id_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "first.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c363"
+      }
+      "second.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c363"
+      }
+    }
+    security_overrides = {}
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
+run "override_entry_without_overrides_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "bare.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c364"
+      }
+    }
+    security_overrides = {
+      "bare.example" = {}
+    }
+  }
+
+  expect_failures = [
+    var.security_overrides,
+  ]
+}
+
 run "override_inside_inventory_is_rejected" {
   command = plan
 

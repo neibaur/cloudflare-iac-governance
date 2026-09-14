@@ -13,6 +13,26 @@ locals {
       setting_id = control.setting_id == null ? "" : control.setting_id
     }
   }
+
+  # security_overrides field for each policy control key. Each domain's override and its policy
+  # fallback are looked up through this one table, so they can't refer to different controls.
+  override_fields = {
+    always_use_https = "always_use_https"
+    bot_fight_mode   = "bot_fight_mode"
+    browser_check    = "browser_integrity_check"
+    min_tls_version  = "min_tls_version"
+    security_level   = "security_level"
+    ssl              = "ssl"
+  }
+
+  # Effective value for each control key per domain: a set (non-null) override wins; otherwise the
+  # policy value applies. Validation rejects empty overrides, so coalesce never skips a set value.
+  zone_controls = {
+    for domain_name in keys(var.domains) : domain_name => {
+      for key, field in local.override_fields :
+      key => coalesce(try(var.security_overrides[domain_name][field], null), local.security_standard[key])
+    }
+  }
 }
 
 module "security_control_catalog" {
@@ -42,11 +62,10 @@ module "cloudflare_zone_config" {
   zone_id   = each.value.zone_id
   zone_name = each.key
 
-  # A per-domain override wins only when it is set (non-null); otherwise the policy value applies.
-  ssl                     = try(var.security_overrides[each.key].ssl, null) != null ? var.security_overrides[each.key].ssl : local.security_standard["ssl"]
-  security_level          = try(var.security_overrides[each.key].security_level, null) != null ? var.security_overrides[each.key].security_level : local.security_standard["security_level"]
-  always_use_https        = try(var.security_overrides[each.key].always_use_https, null) != null ? var.security_overrides[each.key].always_use_https : local.security_standard["always_use_https"]
-  min_tls_version         = try(var.security_overrides[each.key].min_tls_version, null) != null ? var.security_overrides[each.key].min_tls_version : local.security_standard["min_tls_version"]
-  browser_integrity_check = try(var.security_overrides[each.key].browser_integrity_check, null) != null ? var.security_overrides[each.key].browser_integrity_check : local.security_standard["browser_check"]
-  bot_fight_mode          = try(var.security_overrides[each.key].bot_fight_mode, null) != null ? var.security_overrides[each.key].bot_fight_mode : local.security_standard["bot_fight_mode"]
+  ssl                     = local.zone_controls[each.key]["ssl"]
+  security_level          = local.zone_controls[each.key]["security_level"]
+  always_use_https        = local.zone_controls[each.key]["always_use_https"]
+  min_tls_version         = local.zone_controls[each.key]["min_tls_version"]
+  browser_integrity_check = local.zone_controls[each.key]["browser_check"]
+  bot_fight_mode          = local.zone_controls[each.key]["bot_fight_mode"]
 }

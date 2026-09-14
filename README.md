@@ -179,7 +179,7 @@ python run_tools.py --list
 
 The command prints HCL for the Terraform `domains` inventory variable. It remains valid as-is;
 optional posture exceptions belong in a separate `security_overrides` map. A `domains` entry
-holds only `zone_id`, and a plan fails if it contains anything else:
+holds only `zone_id`, each zone ID must be unique, and a plan fails if either rule is broken:
 
 ```hcl
 domains = {
