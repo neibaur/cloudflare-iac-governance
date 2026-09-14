@@ -15,8 +15,8 @@ position would evaluate the real inventory from empty state and discard whatever
 which is not a safe basis for managing existing infrastructure, so no workflow runs `terraform apply`
 until this design is implemented. The configuration declares five
 `cloudflare_zone_setting` instances and one `cloudflare_bot_management` instance for each zone. At
-roughly 96 zones, the intended state contains about 576 managed resources. The Python audit checks
-only four of those six controls, and its standard is separate from the Terraform defaults.
+roughly 96 zones, the intended state contains about 576 managed resources. Terraform and the Python
+audit both read those six controls from `policy/zone-security-standard.json`.
 
 Terraform must first acquire durable, locked state and adopt every existing object. Only after a
 stable no-change baseline exists can scheduled plans detect drift. Automatic correction is a later

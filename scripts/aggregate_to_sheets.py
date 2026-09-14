@@ -167,13 +167,34 @@ def latest_history_audit_date(worksheet: Any) -> str | None:
     return max(audit_dates)
 
 
+def align_to_history_header(worksheet: Any, dataframe: pd.DataFrame) -> pd.DataFrame:
+    """Order columns to match the history sheet, extending its header with any new columns.
+
+    Rows are appended by position, so a report whose columns differ from an existing history header
+    would otherwise land under the wrong labels. Existing columns keep their positions; new columns
+    are added to the right of the header, and columns the report no longer has are left blank.
+    """
+    existing_header = [str(value) for value in worksheet.row_values(1) if str(value)]
+    new_columns = [column for column in dataframe.columns if column not in existing_header]
+    header = [*existing_header, *new_columns]
+
+    if new_columns:
+        if len(header) > worksheet.col_count:
+            worksheet.add_cols(len(header) - worksheet.col_count)
+        worksheet.update([header])
+        print(f"History worksheet: added column(s) to header: {', '.join(new_columns)}.")
+
+    return dataframe.reindex(columns=header)
+
+
 def append_new_history_rows(worksheet: Any, dataframe: pd.DataFrame) -> int:
     newest_sheet_audit_date = latest_history_audit_date(worksheet)
     if newest_sheet_audit_date is None:
         rows_to_append = dataframe
         worksheet.update([list(dataframe.columns)])
     else:
-        rows_to_append = dataframe[dataframe["audit_date"] > newest_sheet_audit_date]
+        aligned = align_to_history_header(worksheet, dataframe)
+        rows_to_append = aligned[aligned["audit_date"] > newest_sheet_audit_date]
 
     rows = sheet_data_rows(rows_to_append)
     if rows:

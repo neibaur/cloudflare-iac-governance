@@ -1,6 +1,6 @@
 mock_provider "cloudflare" {}
 
-run "zone_config_defaults_are_applied" {
+run "zone_config_accepts_explicit_settings" {
   command = plan
 
   module {
@@ -8,8 +8,14 @@ run "zone_config_defaults_are_applied" {
   }
 
   variables {
-    zone_id   = "023e105f4ecef8ad9ca31a8372d0c353"
-    zone_name = "example.com"
+    zone_id                 = "023e105f4ecef8ad9ca31a8372d0c353"
+    zone_name               = "example.com"
+    ssl                     = "full"
+    security_level          = "medium"
+    always_use_https        = "on"
+    min_tls_version         = "1.2"
+    browser_integrity_check = "on"
+    bot_fight_mode          = "on"
   }
 
   assert {
@@ -31,8 +37,14 @@ run "zone_config_rejects_empty_zone_id" {
   }
 
   variables {
-    zone_id   = ""
-    zone_name = "example.com"
+    zone_id                 = ""
+    zone_name               = "example.com"
+    ssl                     = "full"
+    security_level          = "medium"
+    always_use_https        = "on"
+    min_tls_version         = "1.2"
+    browser_integrity_check = "on"
+    bot_fight_mode          = "on"
   }
 
   expect_failures = [

@@ -9,26 +9,40 @@ from urllib.parse import quote
 
 import httpx
 
-SECURITY_SETTING_IDS = (
-    "ssl",
-    "security_level",
-    "always_use_https",
+from scripts.security_standard import (
+    BOT_MANAGEMENT_RESOURCE,
+    ZONE_SETTING_RESOURCE,
+    SecurityControl,
+    expected_values,
+    load_security_standard,
+    validate_controls,
 )
-SECURITY_STANDARDS = {
-    "ssl": "full",
-    "security_level": "medium",
-    "always_use_https": "on",
-    "bot_fight_mode": "on",
-}
-SECURITY_CSV_HEADERS = (
-    "domain_name",
-    "zone_id",
-    "ssl_mode",
-    "always_use_https",
-    "security_level",
-    "bot_fight_mode",
-    "is_compliant",
-)
+
+# Compatibility mapping: the ssl control keeps its historical CSV column name.
+CSV_COLUMN_BY_CONTROL = {"ssl": "ssl_mode"}
+# Columns that existed before the policy file, kept first and in their original order so existing
+# report consumers see a stable layout. Any other control column follows in policy order.
+LEGACY_CONTROL_COLUMNS = ("ssl_mode", "always_use_https", "security_level", "bot_fight_mode")
+
+
+def csv_column(control: SecurityControl) -> str:
+    return CSV_COLUMN_BY_CONTROL.get(control.key, control.key)
+
+
+def security_csv_headers(controls: tuple[SecurityControl, ...]) -> tuple[str, ...]:
+    """Return report headers for the configured controls, preserving the legacy column order."""
+    columns = [csv_column(control) for control in controls]
+    reserved = {"domain_name", "zone_id", "is_compliant"}
+    if len(set(columns)) != len(columns) or reserved.intersection(columns):
+        raise ValueError(
+            "Security controls must map to unique CSV columns that do not reuse "
+            "domain_name, zone_id, or is_compliant."
+        )
+    legacy = [column for column in LEGACY_CONTROL_COLUMNS if column in columns]
+    additional = [column for column in columns if column not in LEGACY_CONTROL_COLUMNS]
+    return ("domain_name", "zone_id", *legacy, *additional, "is_compliant")
+
+
 LATEST_SECURITY_REPORT = "security_compliance_report.csv"
 DEFAULT_REPORT_DIR = Path("reports")
 
@@ -53,6 +67,8 @@ class CloudflareAuditor:
         api_token: str,
         account_id: str,
         base_url: str = "https://api.cloudflare.com/client/v4",
+        *,
+        controls: tuple[SecurityControl, ...] | None = None,
     ):
         if not api_token:
             raise ValueError("A scoped Cloudflare API token is required.")
@@ -62,6 +78,11 @@ class CloudflareAuditor:
         self.api_token = api_token
         self.account_id = account_id
         self.base_url = base_url.rstrip("/")
+        self.controls = (
+            validate_controls(controls) if controls is not None else load_security_standard()
+        )
+        self.expected_values = expected_values(self.controls)
+        self.csv_headers = security_csv_headers(self.controls)
         self._client = httpx.Client(
             base_url=self.base_url,
             headers={
@@ -192,22 +213,13 @@ class CloudflareAuditor:
             print(f"[{index}/{len(sorted_zones)}] checking zone...", flush=True)
             settings = self.get_zone_security_settings(cast(str, zone["id"]))
             deviations = {
-                setting_id: value
-                for setting_id, value in settings.items()
-                if value != SECURITY_STANDARDS[setting_id]
+                key: value for key, value in settings.items() if value != self.expected_values[key]
             }
             is_compliant = int(not deviations)
-            rows.append(
-                {
-                    "domain_name": zone["name"],
-                    "zone_id": zone["id"],
-                    "ssl_mode": settings["ssl"],
-                    "always_use_https": settings["always_use_https"],
-                    "security_level": settings["security_level"],
-                    "bot_fight_mode": settings["bot_fight_mode"],
-                    "is_compliant": is_compliant,
-                }
-            )
+            row: dict[str, Any] = {"domain_name": zone["name"], "zone_id": zone["id"]}
+            row.update({csv_column(control): settings[control.key] for control in self.controls})
+            row["is_compliant"] = is_compliant
+            rows.append(row)
 
             if deviations:
                 findings.append(
@@ -219,9 +231,13 @@ class CloudflareAuditor:
                     }
                 )
 
-        report_path = self._write_security_audit_csv(rows, report_dir)
+        report_path = self._write_security_audit_csv(rows, report_dir, self.csv_headers)
         self._print_security_audit_report(
-            len(zones), findings, report_path, show_identities=show_identities
+            len(zones),
+            findings,
+            report_path,
+            self.expected_values,
+            show_identities=show_identities,
         )
         return findings
 
@@ -230,13 +246,18 @@ class CloudflareAuditor:
             raise ValueError("zone_id is required.")
 
         settings: dict[str, Any] = {}
-        for setting_id in SECURITY_SETTING_IDS:
-            settings[setting_id] = self._setting_value(
-                self._get_zone_setting(zone_id, setting_id),
-                setting_id,
-            )
-
-        settings["bot_fight_mode"] = self._get_bot_fight_mode(zone_id)
+        for control in self.controls:
+            if control.resource == ZONE_SETTING_RESOURCE:
+                # load_security_standard guarantees zone-setting controls carry a setting_id.
+                setting_id = cast(str, control.setting_id)
+                settings[control.key] = self._setting_value(
+                    self._get_zone_setting(zone_id, setting_id),
+                    setting_id,
+                )
+            elif control.resource == BOT_MANAGEMENT_RESOURCE:
+                settings[control.key] = self._get_bot_fight_mode(zone_id)
+            else:  # pragma: no cover - validate_controls rejects other resources
+                raise ValueError(f"Unsupported security control resource: {control.resource}")
         return settings
 
     def _get_bot_fight_mode(self, zone_id: str) -> str:
@@ -447,19 +468,23 @@ class CloudflareAuditor:
         return "\n".join(lines)
 
     @staticmethod
-    def _write_security_audit_csv(rows: list[dict[str, Any]], report_dir: Path) -> Path:
+    def _write_security_audit_csv(
+        rows: list[dict[str, Any]],
+        report_dir: Path,
+        headers: tuple[str, ...],
+    ) -> Path:
         timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         report_dir.mkdir(parents=True, exist_ok=True)
         report_path = report_dir / f"{timestamp}_security_compliance_report.csv"
         latest_report_path = report_dir / LATEST_SECURITY_REPORT
 
         with report_path.open("w", encoding="utf-8", newline="") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
+            writer = csv.DictWriter(report_file, fieldnames=headers)
             writer.writeheader()
             writer.writerows(rows)
 
         with latest_report_path.open("w", encoding="utf-8", newline="") as report_file:
-            writer = csv.DictWriter(report_file, fieldnames=SECURITY_CSV_HEADERS)
+            writer = csv.DictWriter(report_file, fieldnames=headers)
             writer.writeheader()
             writer.writerows(rows)
 
@@ -470,6 +495,7 @@ class CloudflareAuditor:
         total_zones: int,
         findings: list[dict[str, Any]],
         report_path: Path,
+        expected: dict[str, str],
         *,
         show_identities: bool = True,
     ) -> None:
@@ -489,33 +515,25 @@ class CloudflareAuditor:
                     deviation_counts[key] = deviation_counts.get(key, 0) + 1
             print("")
             for key in sorted(deviation_counts):
-                print(
-                    f"{key}: {deviation_counts[key]} domain(s) expected {SECURITY_STANDARDS[key]}"
-                )
+                print(f"{key}: {deviation_counts[key]} domain(s) expected {expected[key]}")
             print(
                 "Domain identities are omitted from this output. Run the audit locally for details."
             )
             return
 
         print("")
-        print("Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Deviations")
-        print("-" * 86)
+        header = " | ".join(["Domain", *expected, "Deviations"])
+        print(header)
+        print("-" * len(header))
 
         for finding in findings:
             settings = cast(dict[str, Any], finding["settings"])
             deviations = cast(dict[str, Any], finding["deviations"])
             deviation_summary = ", ".join(
-                f"{key}={value} expected {SECURITY_STANDARDS[key]}"
-                for key, value in deviations.items()
+                f"{key}={value} expected {expected[key]}" for key, value in deviations.items()
             )
-            print(
-                f"{finding['domain']} | "
-                f"{settings['ssl']} | "
-                f"{settings['security_level']} | "
-                f"{settings['always_use_https']} | "
-                f"{settings['bot_fight_mode']} | "
-                f"{deviation_summary}"
-            )
+            values = [str(settings.get(key, "")) for key in expected]
+            print(" | ".join([str(finding["domain"]), *values, deviation_summary]))
 
 
 class CloudflareAPIError(RuntimeError):

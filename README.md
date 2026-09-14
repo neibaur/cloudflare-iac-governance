@@ -22,6 +22,9 @@ ownership is defined in [.github/CODEOWNERS](.github/CODEOWNERS).
 Architecture decisions are recorded in [docs/adr/](docs/adr/README.md). Security
 reports follow [SECURITY.md](SECURITY.md).
 
+[policy/README.md](policy/README.md) is the single definition of the zone security
+standard, enforced by Terraform and checked by the audit.
+
 ## Architecture
 
 ```mermaid

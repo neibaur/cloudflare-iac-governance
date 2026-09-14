@@ -9,11 +9,27 @@ variable "domains" {
   description = "Map of domain names to Cloudflare zone IDs and optional security posture overrides."
   type = map(object({
     zone_id                 = string
-    ssl                     = optional(string, "full")
-    security_level          = optional(string, "medium")
-    always_use_https        = optional(string, "on")
-    min_tls_version         = optional(string, "1.2")
-    browser_integrity_check = optional(string, "on")
-    bot_fight_mode          = optional(string, "on")
+    ssl                     = optional(string)
+    security_level          = optional(string)
+    always_use_https        = optional(string)
+    min_tls_version         = optional(string)
+    browser_integrity_check = optional(string)
+    bot_fight_mode          = optional(string)
   }))
+
+  validation {
+    condition = alltrue([
+      for domain in values(var.domains) : alltrue([
+        for override in [
+          domain.ssl,
+          domain.security_level,
+          domain.always_use_https,
+          domain.min_tls_version,
+          domain.browser_integrity_check,
+          domain.bot_fight_mode,
+        ] : override == null ? true : trimspace(override) != ""
+      ])
+    ])
+    error_message = "A per-domain security override must be omitted or set to a non-empty value."
+  }
 }

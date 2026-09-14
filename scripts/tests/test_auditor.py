@@ -5,6 +5,7 @@ import httpx
 import pytest
 
 from scripts.cloudflare_client import CloudflareAPIError, CloudflareAuditor
+from scripts.security_standard import SecurityControl
 
 
 def test_auditor_requires_account_id():
@@ -58,15 +59,23 @@ def test_get_zone_security_settings_parses_successful_response(
         "ssl": "full",
         "security_level": "medium",
         "always_use_https": "on",
+        "min_tls_version": "1.2",
+        "browser_check": "on",
         "bot_fight_mode": "on",
     }
-    assert mock_cloudflare.call_count == 4
+    assert mock_cloudflare.call_count == 6
     mock_cloudflare.assert_any_call(f"/zones/{cloudflare_fixture_data.zone_id}/settings/ssl")
     mock_cloudflare.assert_any_call(
         f"/zones/{cloudflare_fixture_data.zone_id}/settings/security_level"
     )
     mock_cloudflare.assert_any_call(
         f"/zones/{cloudflare_fixture_data.zone_id}/settings/always_use_https"
+    )
+    mock_cloudflare.assert_any_call(
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/min_tls_version"
+    )
+    mock_cloudflare.assert_any_call(
+        f"/zones/{cloudflare_fixture_data.zone_id}/settings/browser_check"
     )
     mock_cloudflare.assert_any_call(f"/zones/{cloudflare_fixture_data.zone_id}/bot_management")
 
@@ -95,6 +104,8 @@ def test_get_zone_security_settings_reads_bot_management(mocker, cloudflare_fixt
                     "ssl": "full",
                     "security_level": "medium",
                     "always_use_https": "on",
+                    "min_tls_version": "1.2",
+                    "browser_check": "on",
                 }[setting_id],
             },
         }
@@ -108,6 +119,38 @@ def test_get_zone_security_settings_reads_bot_management(mocker, cloudflare_fixt
     settings = auditor.get_zone_security_settings(cloudflare_fixture_data.zone_id)
 
     assert settings["bot_fight_mode"] == "on"
+
+
+def test_custom_controls_only_fetch_and_compare_those_controls(mocker):
+    controls = (
+        SecurityControl("ssl", "cloudflare_zone_setting", "ssl", "full", False),
+        SecurityControl("bot_fight_mode", "cloudflare_bot_management", None, "on", False),
+    )
+    auditor = CloudflareAuditor("scoped-test-token", "test-account-id", controls=controls)
+    request = mocker.patch.object(
+        auditor,
+        "_request",
+        side_effect=[
+            {"success": True, "result": {"id": "ssl", "value": "flexible"}},
+            {"success": True, "result": {"fight_mode": True}},
+        ],
+    )
+
+    mocker.patch.object(
+        auditor,
+        "_list_zones",
+        return_value=[{"name": "test.example", "id": "test-zone"}],
+    )
+    mocker.patch.object(auditor, "_write_security_audit_csv", return_value=Path("report.csv"))
+
+    findings = auditor.audit_security_posture(show_identities=False)
+
+    assert findings[0]["settings"] == {"ssl": "flexible", "bot_fight_mode": "on"}
+    assert findings[0]["deviations"] == {"ssl": "flexible"}
+    assert [call.args[0] for call in request.call_args_list] == [
+        "/zones/test-zone/settings/ssl",
+        "/zones/test-zone/bot_management",
+    ]
 
 
 @pytest.mark.parametrize("result", [None, {}])
@@ -379,12 +422,16 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
                 "ssl": "full",
                 "security_level": "medium",
                 "always_use_https": "on",
+                "min_tls_version": "1.2",
+                "browser_check": "on",
                 "bot_fight_mode": "on",
             },
             {
                 "ssl": "flexible",
                 "security_level": "low",
                 "always_use_https": "off",
+                "min_tls_version": "1.0",
+                "browser_check": "off",
                 "bot_fight_mode": "off",
             },
         ],
@@ -405,12 +452,16 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
                 "ssl": "flexible",
                 "security_level": "low",
                 "always_use_https": "off",
+                "min_tls_version": "1.0",
+                "browser_check": "off",
                 "bot_fight_mode": "off",
             },
             "deviations": {
                 "ssl": "flexible",
                 "security_level": "low",
                 "always_use_https": "off",
+                "min_tls_version": "1.0",
+                "browser_check": "off",
                 "bot_fight_mode": "off",
             },
         }
@@ -431,6 +482,8 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
                 "always_use_https": "on",
                 "security_level": "medium",
                 "bot_fight_mode": "on",
+                "min_tls_version": "1.2",
+                "browser_check": "on",
                 "is_compliant": 1,
             },
             {
@@ -440,14 +493,17 @@ def test_audit_security_posture_reports_deviations(mocker, capsys):
                 "always_use_https": "off",
                 "security_level": "low",
                 "bot_fight_mode": "off",
+                "min_tls_version": "1.0",
+                "browser_check": "off",
                 "is_compliant": 0,
             },
         ],
         ANY,
+        auditor.csv_headers,
     )
 
 
-def test_fixture_audit_reuses_one_client_and_keeps_six_requests(mocker):
+def test_fixture_audit_reuses_one_client_and_keeps_eight_requests(mocker):
     client_type = mocker.patch("scripts.cloudflare_client.httpx.Client")
     client = client_type.return_value
 
@@ -468,6 +524,8 @@ def test_fixture_audit_reuses_one_client_and_keeps_six_requests(mocker):
         response({"success": True, "result": {"id": "ssl", "value": "full"}}),
         response({"success": True, "result": {"id": "security_level", "value": "medium"}}),
         response({"success": True, "result": {"id": "always_use_https", "value": "on"}}),
+        response({"success": True, "result": {"id": "min_tls_version", "value": "1.2"}}),
+        response({"success": True, "result": {"id": "browser_check", "value": "on"}}),
         response({"success": True, "result": {"fight_mode": True}}),
     ]
     auditor = CloudflareAuditor("fixture-token", "fixture-account")
@@ -477,7 +535,7 @@ def test_fixture_audit_reuses_one_client_and_keeps_six_requests(mocker):
     auditor.audit_security_posture()
 
     client_type.assert_called_once()
-    assert client.get.call_count == 6
+    assert client.get.call_count == 8
 
 
 @pytest.mark.parametrize(
@@ -543,7 +601,11 @@ def test_redacted_audit_report_prints_counts_without_identities(capsys):
     ]
 
     CloudflareAuditor._print_security_audit_report(
-        3, findings, Path("report.csv"), show_identities=False
+        3,
+        findings,
+        Path("report.csv"),
+        CloudflareAuditor("fixture-token", "fixture-account").expected_values,
+        show_identities=False,
     )
 
     output = capsys.readouterr().out
@@ -552,3 +614,26 @@ def test_redacted_audit_report_prints_counts_without_identities(capsys):
     assert "bot_fight_mode: 1 domain(s) expected on" in output
     for identity in ("weak.example", "other.example", "zone-weak", "zone-other"):
         assert identity not in output
+
+
+def test_identities_table_columns_follow_configured_controls(capsys):
+    findings = [
+        {
+            "domain": "weak.example",
+            "zone_id": "zone-weak",
+            "settings": {"ssl": "flexible", "bot_fight_mode": "on"},
+            "deviations": {"ssl": "flexible"},
+        }
+    ]
+
+    CloudflareAuditor._print_security_audit_report(
+        1,
+        findings,
+        Path("report.csv"),
+        {"ssl": "full", "bot_fight_mode": "on"},
+        show_identities=True,
+    )
+
+    lines = capsys.readouterr().out.splitlines()
+    assert "Domain | ssl | bot_fight_mode | Deviations" in lines
+    assert "weak.example | flexible | on | ssl=flexible expected full" in lines
