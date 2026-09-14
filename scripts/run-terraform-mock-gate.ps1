@@ -17,7 +17,7 @@
       6. terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
 
     The override is removed on every exit, including failure. The script exits 1 if any step fails.
-    CI runs the same steps in .github/workflows/quality.yml.
+    CI runs this script in .github/workflows/quality.yml.
 
 .EXAMPLE
     .\scripts\run-terraform-mock-gate.ps1

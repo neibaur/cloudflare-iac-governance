@@ -232,6 +232,37 @@ function Copy-SecretFile {
 # must never reach an agent, such as the R2 state backend keys.
 $WorktreeEnvAllowlist = @('CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID')
 
+# Splits an env file into allowlisted assignment lines and the names of every other variable.
+function Split-EnvByAllowlist {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $kept = New-Object System.Collections.Generic.List[string]
+    $keptNames = New-Object System.Collections.Generic.List[string]
+    $removedNames = New-Object System.Collections.Generic.List[string]
+    foreach ($line in (Get-Content -LiteralPath $Path)) {
+        $trimmed = $line.Trim()
+        if ($trimmed.StartsWith('export ')) { $trimmed = $trimmed.Substring(7).Trim() }
+        $sep = $trimmed.IndexOf('=')
+        if ($sep -lt 1 -or $trimmed.StartsWith('#')) { continue }
+        $name = $trimmed.Substring(0, $sep).Trim()
+        if ($WorktreeEnvAllowlist -contains $name) {
+            $kept.Add($trimmed)
+            $keptNames.Add($name)
+        }
+        else {
+            $removedNames.Add($name)
+        }
+    }
+    return [pscustomobject]@{ Kept = $kept; KeptNames = $keptNames; RemovedNames = $removedNames }
+}
+
+function Write-EnvLines([string]$Path, $Lines) {
+    $content = if ($Lines.Count) { ($Lines -join "`n") + "`n" } else { '' }
+    [System.IO.File]::WriteAllText($Path, $content, (New-Object System.Text.UTF8Encoding($false)))
+}
+
 function Copy-EnvAllowlist {
     param(
         [Parameter(Mandatory = $true)][string]$SourceRelative
@@ -245,28 +276,23 @@ function Copy-EnvAllowlist {
         return
     }
     if ((Test-Path -LiteralPath $dst) -and -not $Force) {
-        Write-Host "  exists  .env (use -Force to overwrite)" -ForegroundColor DarkGray
+        # An existing .env is kept, but never with variables outside the allowlist. A worktree
+        # bootstrapped before the allowlist existed may hold a full copy of the operator .env.
+        $existing = Split-EnvByAllowlist -Path $dst
+        if ($existing.RemovedNames.Count) {
+            Write-EnvLines -Path $dst -Lines $existing.Kept
+            Write-Host "  cleaned .env: removed $($existing.RemovedNames -join ', ') (not allowlisted)" -ForegroundColor Yellow
+        }
+        else {
+            Write-Host "  exists  .env (use -Force to overwrite)" -ForegroundColor DarkGray
+        }
         $script:TouchedPaths += '.env'
         return
     }
 
-    $kept = New-Object System.Collections.Generic.List[string]
-    $keptNames = New-Object System.Collections.Generic.List[string]
-    foreach ($line in (Get-Content -LiteralPath $src)) {
-        $trimmed = $line.Trim()
-        if ($trimmed.StartsWith('export ')) { $trimmed = $trimmed.Substring(7).Trim() }
-        $sep = $trimmed.IndexOf('=')
-        if ($sep -lt 1) { continue }
-        $name = $trimmed.Substring(0, $sep).Trim()
-        if ($WorktreeEnvAllowlist -contains $name) {
-            $kept.Add($trimmed)
-            $keptNames.Add($name)
-        }
-    }
-
-    $content = if ($kept.Count) { ($kept -join "`n") + "`n" } else { '' }
-    [System.IO.File]::WriteAllText($dst, $content, (New-Object System.Text.UTF8Encoding($false)))
-    $names = if ($keptNames.Count) { $keptNames -join ', ' } else { 'no allowlisted variables' }
+    $source = Split-EnvByAllowlist -Path $src
+    Write-EnvLines -Path $dst -Lines $source.Kept
+    $names = if ($source.KeptNames.Count) { $source.KeptNames -join ', ' } else { 'no allowlisted variables' }
     Write-Host "  copied  $SourceRelative -> .env ($names only)" -ForegroundColor Green
     $script:TouchedPaths += '.env'
 }

@@ -84,7 +84,7 @@ python -m venv .venv
 
 `scripts/run-terraform-mock-gate.ps1` runs `terraform fmt -check`, `init -backend=false`, `validate`,
 `test`, `init -reconfigure`, and the `ci.auto.tfvars` plan. It stops at the first failure, exits 1,
-and always removes the local-backend override it writes. CI runs the same steps.
+and always removes the local-backend override it writes. CI's `Quality` workflow runs the same script.
 
 The mock-value plan runs only in CI or a worktree checkout that has no Terraform state. Before
 running it, check for `terraform/terraform.tfstate*`. If any matching file exists, skip the plan

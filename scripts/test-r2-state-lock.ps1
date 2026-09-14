@@ -247,13 +247,6 @@ data "external" "hold" {
             $null = Set-Result 'plan succeeds after recovery' ($recovered.ExitCode -eq 0) 'recovered'
         }
     }
-
-    $latin1 = [System.Text.Encoding]::GetEncoding(28591)
-    $leaked = foreach ($file in Get-ChildItem $work -Recurse -File -Force) {
-        $text = $latin1.GetString([System.IO.File]::ReadAllBytes($file.FullName))
-        $text.Contains($envValues.TF_STATE_ACCESS_KEY_ID) -or $text.Contains($envValues.TF_STATE_SECRET_ACCESS_KEY)
-    }
-    $null = Set-Result 'no credential in output or .terraform' (-not ($leaked -contains $true)) $null
 }
 finally {
     # Stop any Terraform run still in flight, then clear a lock it may have left on the disposable
@@ -274,6 +267,15 @@ finally {
         if (-not $lockClear) {
             Write-Host "WARNING: could not confirm the disposable lock is clear. Delete lock-test/$runId/ in the R2 dashboard." -ForegroundColor Yellow
         }
+    }
+    # Scan after cleanup, so the cleanup commands' logs and .terraform writes are covered too.
+    if (Test-Path $work) {
+        $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+        $leaked = foreach ($file in Get-ChildItem $work -Recurse -File -Force) {
+            $text = $latin1.GetString([System.IO.File]::ReadAllBytes($file.FullName))
+            $text.Contains($envValues.TF_STATE_ACCESS_KEY_ID) -or $text.Contains($envValues.TF_STATE_SECRET_ACCESS_KEY)
+        }
+        $null = Set-Result 'no credential in output or .terraform' (-not ($leaked -contains $true)) $null
     }
     if ($pushed) { Pop-Location }
     foreach ($name in $savedEnv.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnv[$name], 'Process') }
