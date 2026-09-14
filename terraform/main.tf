@@ -4,6 +4,11 @@ locals {
   }
 }
 
+output "security_standard" {
+  description = "Expected value for each control in policy/zone-security-standard.json. Contains no zone identities."
+  value       = local.security_standard
+}
+
 module "cloudflare_zone_config" {
   source = "./modules/cloudflare_zone_config"
 

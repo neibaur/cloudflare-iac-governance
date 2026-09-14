@@ -230,10 +230,11 @@ class CloudflareAuditor:
         settings: dict[str, Any] = {}
         for control in self.controls:
             if control.resource == "cloudflare_zone_setting":
-                assert control.setting_id is not None
+                # load_security_standard guarantees zone-setting controls carry a setting_id.
+                setting_id = cast(str, control.setting_id)
                 settings[control.key] = self._setting_value(
-                    self._get_zone_setting(zone_id, control.setting_id),
-                    control.setting_id,
+                    self._get_zone_setting(zone_id, setting_id),
+                    setting_id,
                 )
             else:
                 settings[control.key] = self._get_bot_fight_mode(zone_id)
@@ -497,11 +498,9 @@ class CloudflareAuditor:
             return
 
         print("")
-        print(
-            "Domain | SSL | Security Level | Always HTTPS | Bot Fight Mode | Min TLS | "
-            "Browser Check | Deviations"
-        )
-        print("-" * 116)
+        header = " | ".join(["Domain", *expected, "Deviations"])
+        print(header)
+        print("-" * len(header))
 
         for finding in findings:
             settings = cast(dict[str, Any], finding["settings"])
@@ -509,16 +508,8 @@ class CloudflareAuditor:
             deviation_summary = ", ".join(
                 f"{key}={value} expected {expected[key]}" for key, value in deviations.items()
             )
-            print(
-                f"{finding['domain']} | "
-                f"{settings['ssl']} | "
-                f"{settings['security_level']} | "
-                f"{settings['always_use_https']} | "
-                f"{settings['bot_fight_mode']} | "
-                f"{settings['min_tls_version']} | "
-                f"{settings['browser_check']} | "
-                f"{deviation_summary}"
-            )
+            values = [str(settings.get(key, "")) for key in expected]
+            print(" | ".join([str(finding["domain"]), *values, deviation_summary]))
 
 
 class CloudflareAPIError(RuntimeError):

@@ -1,6 +1,6 @@
 mock_provider "cloudflare" {}
 
-run "zone_config_defaults_are_applied" {
+run "zone_config_accepts_explicit_settings" {
   command = plan
 
   module {

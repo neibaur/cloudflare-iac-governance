@@ -613,3 +613,26 @@ def test_redacted_audit_report_prints_counts_without_identities(capsys):
     assert "bot_fight_mode: 1 domain(s) expected on" in output
     for identity in ("weak.example", "other.example", "zone-weak", "zone-other"):
         assert identity not in output
+
+
+def test_identities_table_columns_follow_configured_controls(capsys):
+    findings = [
+        {
+            "domain": "weak.example",
+            "zone_id": "zone-weak",
+            "settings": {"ssl": "flexible", "bot_fight_mode": "on"},
+            "deviations": {"ssl": "flexible"},
+        }
+    ]
+
+    CloudflareAuditor._print_security_audit_report(
+        1,
+        findings,
+        Path("report.csv"),
+        {"ssl": "full", "bot_fight_mode": "on"},
+        show_identities=True,
+    )
+
+    lines = capsys.readouterr().out.splitlines()
+    assert "Domain | ssl | bot_fight_mode | Deviations" in lines
+    assert "weak.example | flexible | on | ssl=flexible expected full" in lines
