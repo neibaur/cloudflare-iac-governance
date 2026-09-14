@@ -129,12 +129,18 @@ organization-wide policy library, but not for this narrow action/type/count gate
 ## Decision
 
 Cloudflare R2 through the S3 backend is the chosen backend, contingent on the phase 2 concurrent-lock
-acceptance test; HCP Terraform is the fallback if that test fails. Keep Terraform at 1.10 or later
-(the repository pins 1.15). Enable `use_lockfile = true`; configure the documented R2
-endpoint and compatibility flags; provide credentials only through environment variables or
-ephemeral runner files; restrict object permissions to the state key and its `.tflock` companion;
-and enable R2 object versioning if the selected R2 feature supports the required recovery workflow.
-The exact R2 version-retention mechanism is unverified and remains an open question.
+acceptance test; HCP Terraform is the fallback if that test fails. The pinned Terraform 1.15.9
+satisfies the 1.10 minimum for the S3 backend lockfile. Enable `use_lockfile = true`; configure the
+documented R2 endpoint and compatibility flags; provide credentials only through environment
+variables or ephemeral runner files; and restrict object permissions to the state key and its
+`.tflock` companion. The committed partial backend has no bucket, key, or endpoint, so the mock
+gate uses an ignored local-backend override and cannot contact R2. Operators supply those
+non-secret values through ignored backend configuration for an explicit remote initialization.
+
+Use a backup prefix protected by an R2 bucket lock rule and lifecycle expiry as the recommended
+recovery design. Each backup must use a new object key. A bucket lock rule must not cover the live
+state key or its `.tflock`, which Terraform overwrites. R2 object versioning remains unavailable
+unless the operator verifies current official support; the final recovery selection remains open.
 
 HCP Terraform is the fallback if the R2 concurrency test fails. Its 500-resource Free limit does
 not fit the expected state.
@@ -275,7 +281,7 @@ Each phase is one reviewable pull request and must pass the repository quality g
    1.10 lockfile minimum, add partial R2 S3 backend configuration, document recovery, and add a disposable-backend
    lock test procedure. Acceptance: two concurrent holders cannot acquire the same test lock, stale
    lock recovery is demonstrated, and no credential appears in configuration or logs. The operator
-   creates the R2 bucket, enables the selected recovery/versioning feature, creates scoped backend
+   creates the R2 bucket, selects and configures a recovery design, creates scoped backend
    credentials, and adds the named secrets.
 3. **Inventory and generated imports.** Separate inventory from standard values and add root-module
    `for_each` import blocks for all five setting resources and bot management per zone. Acceptance:

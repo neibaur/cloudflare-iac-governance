@@ -94,12 +94,23 @@ available.
 ```powershell
 .venv\Scripts\python scripts/run_all_checks.py
 terraform -chdir=terraform fmt -check -recursive
+@'
+terraform {
+  backend "local" {}
+}
+'@ | Set-Content terraform/ci_backend_override.tf -NoNewline
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
-terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+terraform -chdir=terraform test
+terraform -chdir=terraform init -reconfigure
+terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
+Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 ```
 
-Only run the `ci.auto.tfvars` plan in a safe mock-state/no-real-state context.
+Only run the `ci.auto.tfvars` plan in a safe mock-state/no-real-state context. The ignored
+override keeps this gate on a local backend and therefore prevents it from contacting R2.
+For the R2 state-backend setup and its separate operator commands, see the
+[Terraform state backend runbook](docs/terraform-state-backend-runbook.md).
 
 `.secrets.baseline` is kept for local detect-secrets pre-flight checks.
 Gitleaks runs in GitHub Actions as the CI/CD history-scanning enforcement gate.

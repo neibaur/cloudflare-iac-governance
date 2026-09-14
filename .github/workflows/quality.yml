@@ -48,6 +48,14 @@ jobs:
       - name: Check Terraform formatting
         run: terraform -chdir=terraform fmt -check -recursive
 
+      - name: Select local backend for the mock gate
+        run: |
+          cat > terraform/ci_backend_override.tf <<'EOF'
+          terraform {
+            backend "local" {}
+          }
+          EOF
+
       - name: Initialize Terraform without backend
         run: terraform -chdir=terraform init -backend=false
 
@@ -56,6 +64,9 @@ jobs:
 
       - name: Test Terraform
         run: terraform -chdir=terraform test
+
+      - name: Initialize local backend for the mock plan
+        run: terraform -chdir=terraform init -reconfigure
 
       - name: Refuse mock plan when Terraform state is present
         run: |

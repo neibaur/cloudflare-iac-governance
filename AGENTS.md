@@ -80,10 +80,17 @@ python -m venv .venv
 .venv\Scripts\python -m pip install -r requirements-dev.txt
 .venv\Scripts\python scripts/run_all_checks.py
 terraform -chdir=terraform fmt -check -recursive
+@'
+terraform {
+  backend "local" {}
+}
+'@ | Set-Content terraform/ci_backend_override.tf -NoNewline
 terraform -chdir=terraform init -backend=false
 terraform -chdir=terraform validate
 terraform -chdir=terraform test
-terraform -chdir=terraform plan -refresh=false -input=false -var-file=ci.auto.tfvars
+terraform -chdir=terraform init -reconfigure
+terraform -chdir=terraform plan -refresh=false -input=false "-var-file=ci.auto.tfvars"
+Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
 ```
 
 The mock-value plan runs only in CI or a worktree checkout that has no Terraform state. Before
@@ -104,7 +111,8 @@ detect-secrets audit .secrets.baseline
 ## Terraform Safety Rules
 
 - Never run `terraform apply` in pull request workflows.
-- Default validation is `terraform fmt -check -recursive`, `terraform init -backend=false`, `terraform validate`, and a safe-input `terraform plan`.
+- The mock validation gate writes an ignored `ci_backend_override.tf` that selects the local backend. It first runs `terraform init -backend=false`, validates and tests, then runs `terraform init -reconfigure` before the mock plan. This gate never contacts R2; remove the override after the plan.
+- Operators initialize R2 explicitly with `terraform init -reconfigure -backend-config=backend.hcl`, where `backend.hcl` is ignored and contains only bucket, key, and endpoint values. Credentials must be environment variables, never backend configuration.
 - Use `-refresh=false` for PR/local mock-value plans when local state or credentials may exist.
 - Use only mock CI values from `terraform/ci.auto.tfvars` for PR validation.
 - Use real values only through GitHub Secrets or a local ignored `terraform/terraform.tfvars`.
