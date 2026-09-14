@@ -1,5 +1,4 @@
 import os
-import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,15 +11,8 @@ UTC_PATTERN = r"^\d{8}T\d{6}Z$"
 
 
 @pytest.fixture
-def report_workspace():
-    root = Path("pytest-cache-files-sheets")
-    if root.exists():
-        shutil.rmtree(root)
-    root.mkdir()
-
-    yield root
-
-    shutil.rmtree(root, ignore_errors=True)
+def report_workspace(tmp_path):
+    return tmp_path
 
 
 def write_report(path: Path, rows: list[dict[str, object]]) -> None:

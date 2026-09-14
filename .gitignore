@@ -49,6 +49,8 @@ coverage.xml
 *.py.cover
 .hypothesis/
 .pytest_cache/
+.pytest_tmp/
+.pytest_gate_tmp/
 pytest-cache-files-*/
 cover/
 .mypy_cache/
