@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -126,17 +126,18 @@ its documentation notes that unknown plan-time values limit what a policy can kn
 runtime, Rego source, dependency maintenance, and a second test tool. That is worthwhile for a broad
 organization-wide policy library, but not for this narrow action/type/count gate.
 
-## Recommended decision
+## Decision
 
-Adopt Cloudflare R2 through the S3 backend, contingent on a pre-migration lock acceptance test, and
-keep Terraform at 1.10 or later (the repository pins 1.15). Enable `use_lockfile = true`; configure the documented R2
+Cloudflare R2 through the S3 backend is the chosen backend, contingent on the phase 2 concurrent-lock
+acceptance test; HCP Terraform is the fallback if that test fails. Keep Terraform at 1.10 or later
+(the repository pins 1.15). Enable `use_lockfile = true`; configure the documented R2
 endpoint and compatibility flags; provide credentials only through environment variables or
 ephemeral runner files; restrict object permissions to the state key and its `.tflock` companion;
 and enable R2 object versioning if the selected R2 feature supports the required recovery workflow.
 The exact R2 version-retention mechanism is unverified and remains an open question.
 
-HCP Terraform is the fallback if the R2 concurrency test fails or the operator prefers a managed
-service and accepts paid capacity. Its 500-resource Free limit does not fit the expected state.
+HCP Terraform is the fallback if the R2 concurrency test fails. Its 500-resource Free limit does
+not fit the expected state.
 
 Keep an explicit zone inventory for initial adoption. Split it from the policy standard and retain
 it as a protected CI secret named `REAL_TFVARS` until a separately reviewed inventory mechanism is
@@ -309,8 +310,6 @@ Each phase is one reviewable pull request and must pass the repository quality g
 
 ## Open questions
 
-- Does the operator prefer R2 after the required concurrent-lock acceptance test, or paid HCP
-  Terraform? This ADR recommends but does not choose on the operator's behalf.
 - Which R2 object-versioning or retention feature provides tested state recovery, and what retention
   period is appropriate? The official Terraform/R2 backend page does not verify this.
 - Does Terraform 1.10's native S3 lock pass concurrent acquisition, unlock, interrupted-run, and

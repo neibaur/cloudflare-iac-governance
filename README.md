@@ -132,10 +132,10 @@ domain mappings in your local `terraform/terraform.tfvars` file.
 ## Terraform Safety
 
 Pull request workflows never run `terraform apply`, Cloudflare audits, or Google
-Sheets sync. The read-only audit and report upload run from the `Compliance
-Audit` workflow on `main`, by weekly schedule, or by manual dispatch. Google
-Sheets sync runs automatically on the weekly schedule, and from manual dispatch
-only with `sync_to_sheets=Y`.
+Sheets sync. The read-only audit runs from the `Compliance Audit` workflow on
+`main`, by weekly schedule, or by manual dispatch. Google Sheets sync runs
+automatically on the weekly schedule, and from manual dispatch only with
+`sync_to_sheets=Y`.
 
 Never edit Terraform state files manually. Real `.tfvars` content must stay in
 local ignored files or GitHub Secrets.

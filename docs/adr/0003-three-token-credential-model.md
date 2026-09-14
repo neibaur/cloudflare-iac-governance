@@ -18,10 +18,13 @@ or failure in one path to all other paths.
 
 Use three separate Cloudflare credentials:
 
-- A CI token stored as a GitHub Secret, with the edit permission required by guarded automation.
+- A read-only CI token stored as a GitHub Secret, used by the read-only `Compliance Audit` workflow.
 - An expiring, IP-allowlisted operator token stored in local `.env`, with edit permission for
   attended operations.
 - An expiring, read-only agent token stored in `.env.agent` for explicitly provisioned audits.
+
+An edit-capable token for guarded correction is separate from this model's CI token and is defined
+by ADR 0001.
 
 The [Cloudflare API Token Runbook](../cloudflare-api-token-runbook.md) is the source of truth for
 scopes, setup, storage, verification, rotation, and troubleshooting procedures.
