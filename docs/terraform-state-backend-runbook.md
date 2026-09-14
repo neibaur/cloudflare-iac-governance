@@ -159,7 +159,9 @@ R2 does not document S3 object versioning, so recovery relies on locked backup c
   The copy must run inside the same serialization boundary as the state write it protects.
   Terraform holds `.tflock` only while its own command runs, so the check for a live state object,
   the copy, and the state write run in the same serialized GitHub Actions job and concurrency
-  group. Before a state write outside that workflow, disable every workflow that uses the state.
+  group. Before a state write outside that workflow, disable every workflow that uses the state,
+  cancel or wait for each of their queued and running runs, and confirm that no run and no other
+  operator is still active. Disabling a workflow alone stops only future triggers.
   When no live state object exists, as before the first adoption, skip the copy and record that no
   backup was taken.
 - **Bucket lock rule:** on the bucket's **Settings** tab, a rule on the `backups/` prefix with a
@@ -178,12 +180,14 @@ which has no state to back up yet.
 
 A restore copies an object directly over the live key, which bypasses Terraform's lock. Use a
 reviewed procedure that follows these steps:
-1. Disable every workflow that uses the state, and confirm no operator is running Terraform against
-   it.
+1. Disable every workflow that uses the state, cancel or wait for each of their queued and running
+   runs, and confirm that no run is still active and no operator is running Terraform against it.
+   Disabling a workflow alone stops only future triggers.
 2. Confirm that no `state/terraform.tfstate.tflock` object exists. If one does, find out which run
    holds it before going further.
-3. Back up the current `state/terraform.tfstate` under `backups/` as described above, so the restore
-   can itself be undone.
+3. If `state/terraform.tfstate` exists, back it up under `backups/` as described above, so the
+   restore can itself be undone. If it doesn't exist, record that no pre-restore backup was
+   available, and continue.
 4. Copy the chosen backup over `state/terraform.tfstate`.
 5. Run a refresh plan to confirm the result, then re-enable the workflows.
 

@@ -145,9 +145,11 @@ the same serialization boundary as the state write it protects. Terraform holds 
 its own command runs, so a separate copy step can't rely on that lock: the check for a live state
 object, the copy, and the state write run in the same serialized GitHub Actions job and concurrency
 group. An operator state write outside that workflow first disables every workflow that uses the
-state. Otherwise, overlapping writes can both back up the same old state and fail to capture the
-second write's pre-change state. When no live state object exists, as before the first adoption,
-there is nothing to back up: the job records that no backup was taken and continues.
+state, cancels or waits for each of their queued and running runs, and confirms that no run and no
+other operator is still active; disabling a workflow alone stops only future triggers. Otherwise,
+overlapping writes can both back up the same old state and fail to capture the second write's
+pre-change state. When no live state object exists, as before the first adoption, there is nothing
+to back up: the job records that no backup was taken and continues.
 
 An R2 bucket lock rule on `backups/` retains each copy for 90 days, and a lifecycle rule expires
 copies after 100 days. Both rules are configured before the first state-writing workflow runs. A
