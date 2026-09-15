@@ -206,3 +206,46 @@ def test_missing_plan_file_or_extra_arguments_fail(tmp_path, capsys, argv):
 
     assert code == 1
     assert capsys.readouterr().out.splitlines()[-1] == "RESULT: FAIL"
+
+
+@pytest.mark.parametrize("error", [FileNotFoundError("terraform"), PermissionError("denied")])
+def test_terraform_that_cannot_run_fails_cleanly(monkeypatch, tmp_path, capsys, error):
+    plan_file = tmp_path / "import.tfplan"
+    plan_file.write_bytes(b"binary plan")
+
+    def fake_run(command, **kwargs):
+        raise error
+
+    monkeypatch.setattr(check_import_plan.subprocess, "run", fake_run)
+
+    code = check_import_plan.main([str(plan_file)])
+    output = capsys.readouterr().out
+
+    assert code == 1
+    assert f"Terraform could not be run ({type(error).__name__})." in output
+    assert output.splitlines()[-1] == "RESULT: FAIL"
+
+
+def test_non_utf8_terraform_output_fails_cleanly(monkeypatch, tmp_path, capsys):
+    plan_file = tmp_path / "import.tfplan"
+    plan_file.write_bytes(b"binary plan")
+
+    def fake_run(command, **kwargs):
+        return subprocess.CompletedProcess(command, 0, bytes([0xFF, 0xFE]), b"")
+
+    monkeypatch.setattr(check_import_plan.subprocess, "run", fake_run)
+
+    assert check_import_plan.main([str(plan_file)]) == 1
+    assert capsys.readouterr().out.splitlines()[-1] == "RESULT: FAIL"
+
+
+def test_invalid_security_standard_fails_cleanly(monkeypatch, capsys):
+    def broken_standard():
+        raise check_import_plan.SecurityStandardError("Security standard file is missing.")
+
+    monkeypatch.setattr(check_import_plan, "load_security_standard", broken_standard)
+
+    code, output = run_main(clean_plan(), capsys)
+
+    assert code == 1
+    assert output.splitlines() == ["Security standard file is missing.", "RESULT: FAIL"]

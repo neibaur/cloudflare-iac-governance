@@ -23,6 +23,7 @@ from scripts.security_standard import (
     BOT_MANAGEMENT_RESOURCE,
     ZONE_SETTING_RESOURCE,
     SecurityControl,
+    SecurityStandardError,
     load_security_standard,
 )
 
@@ -122,7 +123,9 @@ def check_import_plan(
         importing = details.get("importing")
         if isinstance(importing, dict):
             found[str(change.get("address"))] = importing.get("id")
-        # An import that also updates, or any create, delete, or replace, is a change.
+        # Terraform 1.15 plans a clean import as ["no-op"] with an importing object; an import that
+        # also changes the object plans ["update"] or ["delete", "create"]. Anything but no-op is a
+        # change, whether or not the resource is being imported.
         if details.get("actions") != ["no-op"]:
             other_changes += 1
 
@@ -162,20 +165,27 @@ def read_plan_json(plan_file: Path) -> str:
     """Return `terraform show -json` output for a saved plan, without echoing Terraform's output."""
     if not plan_file.is_file():
         raise ImportPlanError("The plan file does not exist.")
-    result = subprocess.run(  # nosec B603 B607
-        [
-            "terraform",
-            f"-chdir={REPOSITORY_ROOT / 'terraform'}",
-            "show",
-            "-json",
-            str(plan_file.resolve()),
-        ],
-        capture_output=True,
-        check=False,
-    )
+    try:
+        result = subprocess.run(  # nosec B603 B607
+            [
+                "terraform",
+                f"-chdir={REPOSITORY_ROOT / 'terraform'}",
+                "show",
+                "-json",
+                str(plan_file.resolve()),
+            ],
+            capture_output=True,
+            check=False,
+        )
+    except OSError as exc:
+        # Report only the error type: the message can include local paths.
+        raise ImportPlanError(f"Terraform could not be run ({type(exc).__name__}).") from exc
     if result.returncode != 0:
         raise ImportPlanError(f"terraform show failed with exit code {result.returncode}.")
-    return result.stdout.decode("utf-8")
+    try:
+        return result.stdout.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ImportPlanError("terraform show output is not valid UTF-8.") from exc
 
 
 def main(argv: list[str] | None = None, stdin: TextIO | None = None) -> int:
@@ -202,7 +212,7 @@ def main(argv: list[str] | None = None, stdin: TextIO | None = None) -> int:
         if not isinstance(plan, dict):
             raise ImportPlanError("Input is not a Terraform JSON plan.")
         report = check_import_plan(plan, load_security_standard())
-    except ImportPlanError as exc:
+    except (ImportPlanError, SecurityStandardError) as exc:
         print(str(exc))
         print("RESULT: FAIL")
         return 1

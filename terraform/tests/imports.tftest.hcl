@@ -91,6 +91,15 @@ run "imports_cover_every_resource_for_two_domains" {
     error_message = "Each import must use its own domain's zone ID."
   }
 
+  # The import blocks pass import_id through unchanged, so these are the IDs Terraform imports.
+  assert {
+    condition = alltrue(concat(
+      [for key, setting in local.import_zone_settings : setting.import_id == "${setting.zone_id}/${setting.setting_id}" && key == "${setting.domain_name}/${setting.setting_id}"],
+      [for domain_name, bot in local.import_bot_management : bot.import_id == bot.zone_id],
+    )) && local.import_zone_settings["first.example/ssl"].import_id == "023e105f4ecef8ad9ca31a8372d0c353/ssl" && local.import_bot_management["second.example"].import_id == "023e105f4ecef8ad9ca31a8372d0c354"
+    error_message = "Zone setting imports must use <zone_id>/<setting_id> and bot management imports must use <zone_id>, each with its own domain's zone ID."
+  }
+
   assert {
     condition = alltrue([
       for setting in values(local.import_zone_settings) :
