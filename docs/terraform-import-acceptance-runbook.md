@@ -1,29 +1,43 @@
 # Terraform import acceptance run
 
-Run this acceptance procedure only from the primary clone. It produces a read-only import plan;
-phase 3 does not authorize applying it.
+Run this acceptance procedure only from the primary clone, in one PowerShell window from the
+repository root. It produces a read-only import plan; phase 3 does not authorize applying it.
 
-1. Create the ignored `terraform/backend.hcl` as described in the
-   [Terraform state backend runbook](terraform-state-backend-runbook.md). Use that runbook's
-   environment-variable loader for the R2 credentials, then initialize the remote backend:
+Keep every Terraform argument quoted exactly as shown. Windows PowerShell splits an unquoted
+argument such as `-var-file=terraform.tfvars` at the dot, and Terraform then fails with
+`Too many command line arguments`.
+
+1. Create the ignored `terraform/backend.hcl`, then load the R2 keys and initialize the remote
+   backend, both as described under "Initialize the remote backend" in the
+   [Terraform state backend runbook](terraform-state-backend-runbook.md). Its loader ends with:
 
    ```powershell
-   terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
+   terraform -chdir=terraform init -reconfigure "-backend-config=backend.hcl"
    ```
 
 2. Put the real inventory in the ignored `terraform/terraform.tfvars`. `domains` is the required
    domain-to-zone-ID inventory, and each entry holds only `zone_id`; `security_overrides` is
    optional. Do not copy either into the repository or command history.
 
-3. Set `CLOUDFLARE_API_TOKEN` in the current shell to a read-only token with `Zone:Read`,
-   `Zone Settings:Read`, and `Bot Management:Read`, following
-   [the Cloudflare API token runbook](cloudflare-api-token-runbook.md). Load it from a file without
-   displaying it, as the backend runbook's loader does for the R2 keys.
+3. Load a read-only Cloudflare token with `Zone:Read`, `Zone Settings:Read`, and
+   `Bot Management:Read` (see [the Cloudflare API token runbook](cloudflare-api-token-runbook.md))
+   into the current shell without displaying it. This reads `CLOUDFLARE_API_TOKEN` from `.env`, so
+   confirm first that the token stored there has no edit permission:
+
+   ```powershell
+   Remove-Item Env:CLOUDFLARE_API_TOKEN -ErrorAction SilentlyContinue
+   foreach ($line in Get-Content .env) {
+       if ($line -match '^\s*CLOUDFLARE_API_TOKEN\s*=\s*(.+?)\s*$') {
+           $env:CLOUDFLARE_API_TOKEN = $Matches[1].Trim('"').Trim("'")
+       }
+   }
+   if (-not $env:CLOUDFLARE_API_TOKEN) { throw '.env must define CLOUDFLARE_API_TOKEN.' }
+   ```
 
 4. Create the plan outside the repository. From the repository root:
 
    ```powershell
-   terraform -chdir=terraform plan -var-file=terraform.tfvars -var import_existing_zones=true -out="$env:TEMP\cloudflare-import.tfplan"
+   terraform -chdir=terraform plan "-var-file=terraform.tfvars" "-var=import_existing_zones=true" "-out=$env:TEMP\cloudflare-import.tfplan"
    ```
 
    `-var-file=terraform.tfvars` is required. Terraform loads `ci.auto.tfvars` automatically after
@@ -59,8 +73,13 @@ phase 3 does not authorize applying it.
 
 8. Do not apply the saved plan. Phase 4 performs the first import apply. The plan file contains
    real zone identities and configuration: delete it once the checker result is recorded, and clear
-   `CLOUDFLARE_API_TOKEN` and the R2 keys from the shell.
+   `CLOUDFLARE_API_TOKEN` and the R2 keys from the shell:
+
+   ```powershell
+   Remove-Item "$env:TEMP\cloudflare-import.tfplan"
+   Remove-Item Env:CLOUDFLARE_API_TOKEN, Env:AWS_ACCESS_KEY_ID, Env:AWS_SECRET_ACCESS_KEY
+   ```
 
 9. After the acceptance run, never run a standalone plan with `ci.auto.tfvars`. Run
-   `./scripts/run-terraform-mock-gate.ps1`, then run `init -reconfigure -backend-config=backend.hcl`
-   again before any later remote Terraform work.
+   `.\scripts\run-terraform-mock-gate.ps1`, then repeat step 1's remote initialization before any
+   later remote Terraform work.
