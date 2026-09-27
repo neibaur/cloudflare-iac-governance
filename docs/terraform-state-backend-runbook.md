@@ -101,6 +101,29 @@ endpoints = {
 }
 ```
 
+To write it from the `.env` values the lock test already uses, without displaying them, run this
+from the repository root:
+
+```powershell
+$values = @{}
+foreach ($line in Get-Content .env) {
+    if ($line -match '^\s*(TF_STATE_BUCKET|TF_STATE_ACCOUNT_ID|CLOUDFLARE_ACCOUNT_ID)\s*=\s*(.+?)\s*$') {
+        $values[$Matches[1]] = $Matches[2].Trim('"').Trim("'")
+    }
+}
+$accountId = if ($values['TF_STATE_ACCOUNT_ID']) { $values['TF_STATE_ACCOUNT_ID'] } else { $values['CLOUDFLARE_ACCOUNT_ID'] }
+if (-not $values['TF_STATE_BUCKET'] -or -not $accountId) {
+    throw '.env must define TF_STATE_BUCKET and TF_STATE_ACCOUNT_ID or CLOUDFLARE_ACCOUNT_ID.'
+}
+$hcl = "bucket = `"$($values['TF_STATE_BUCKET'])`"`nkey    = `"state/terraform.tfstate`"`n" +
+    "endpoints = {`n  s3 = `"https://$accountId.r2.cloudflarestorage.com`"`n}`n"
+[IO.File]::WriteAllText((Join-Path (Get-Location) 'terraform\backend.hcl'), $hcl, [Text.Encoding]::ASCII)
+```
+
+In Windows PowerShell, quote any Terraform argument that has a dot after `=`, as the commands below
+do. PowerShell splits an unquoted `-backend-config=backend.hcl` into two arguments, and Terraform
+then fails with `Too many command line arguments`.
+
 Load the operator key from `.env` into the current shell only, then initialize from the repository
 root. Never type or paste a key into a command: PowerShell's PSReadLine saves command history to
 disk. This loop copies the values without displaying them.
@@ -121,7 +144,7 @@ if (-not $keys['ACCESS_KEY_ID'] -or -not $keys['SECRET_ACCESS_KEY']) {
 $env:AWS_ACCESS_KEY_ID = $keys['ACCESS_KEY_ID']
 $env:AWS_SECRET_ACCESS_KEY = $keys['SECRET_ACCESS_KEY']
 Remove-Item terraform/ci_backend_override.tf -ErrorAction SilentlyContinue
-terraform -chdir=terraform init -reconfigure -backend-config=backend.hcl
+terraform -chdir=terraform init -reconfigure "-backend-config=backend.hcl"
 ```
 
 When you're finished, clear the keys from the shell:

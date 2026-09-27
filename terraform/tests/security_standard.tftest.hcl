@@ -7,7 +7,12 @@ variables {
     }
     "override.example" = {
       zone_id = "023e105f4ecef8ad9ca31a8372d0c354"
-      ssl     = "strict"
+    }
+  }
+
+  security_overrides = {
+    "override.example" = {
+      ssl = "strict"
     }
   }
 }
@@ -51,7 +56,8 @@ run "empty_domain_map_rejects_policy_catalog_mismatch" {
   command = plan
 
   variables {
-    domains = {}
+    domains            = {}
+    security_overrides = {}
   }
 
   override_module {
@@ -102,9 +108,88 @@ run "empty_override_is_rejected" {
     domains = {
       "empty.example" = {
         zone_id = "023e105f4ecef8ad9ca31a8372d0c355"
-        ssl     = ""
       }
     }
+
+    security_overrides = {
+      "empty.example" = {
+        ssl = ""
+      }
+    }
+  }
+
+  expect_failures = [
+    var.security_overrides,
+  ]
+}
+
+run "every_override_field_wins_for_its_domain_only" {
+  command = plan
+
+  variables {
+    domains = {
+      "values.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c360"
+      }
+      "https.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c365"
+      }
+      "browser.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c366"
+      }
+      "bot.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c367"
+      }
+      "plain.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c361"
+      }
+    }
+
+    # The on/off controls share their only non-policy value, so each gets its own domain; a wrong or
+    # swapped mapping in terraform/main.tf then changes a domain that didn't override that control.
+    security_overrides = {
+      "values.example" = {
+        ssl             = "strict"
+        security_level  = "high"
+        min_tls_version = "1.3"
+      }
+      "https.example" = {
+        always_use_https = "off"
+      }
+      "browser.example" = {
+        browser_integrity_check = "off"
+      }
+      "bot.example" = {
+        bot_fight_mode = "off"
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      for domain, changed in {
+        "values.example"  = { ssl = "strict", security_level = "high", min_tls_version = "1.3" }
+        "https.example"   = { always_use_https = "off" }
+        "browser.example" = { browser_check = "off" }
+        "bot.example"     = { bot_fight_mode = "off" }
+        "plain.example"   = {}
+      } :
+      jsonencode(module.cloudflare_zone_config[domain].controls) == jsonencode(merge(output.security_standard, changed))
+    ])
+    error_message = "Each security_overrides field must set only its own control, and only for its own domain."
+  }
+}
+
+run "empty_inventory_zone_id_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "empty.example" = {
+        zone_id = ""
+      }
+    }
+    security_overrides = {}
   }
 
   expect_failures = [
@@ -112,11 +197,134 @@ run "empty_override_is_rejected" {
   ]
 }
 
+run "padded_inventory_zone_id_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "padded.example" = {
+        zone_id = " 023e105f4ecef8ad9ca31a8372d0c362"
+      }
+    }
+    security_overrides = {}
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
+run "duplicate_inventory_zone_id_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "first.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c363"
+      }
+      "second.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c363"
+      }
+    }
+    security_overrides = {}
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
+run "override_entry_without_overrides_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "bare.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c364"
+      }
+    }
+    security_overrides = {
+      "bare.example" = {}
+    }
+  }
+
+  expect_failures = [
+    var.security_overrides,
+  ]
+}
+
+run "misspelled_override_field_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "typo.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c368"
+      }
+    }
+
+    # A valid field next to the misspelled one, so the entry isn't rejected for being empty.
+    security_overrides = {
+      "typo.example" = {
+        ssl           = "strict"
+        securty_level = "high"
+      }
+    }
+  }
+
+  expect_failures = [
+    output.security_standard,
+  ]
+}
+
+run "override_inside_inventory_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "legacy.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c357"
+        ssl     = "strict"
+      }
+    }
+
+    # Clear the file-level overrides, so only the inventory-shape validation can fail this run.
+    security_overrides = {}
+  }
+
+  expect_failures = [
+    var.domains,
+  ]
+}
+
+run "override_for_unknown_domain_is_rejected" {
+  command = plan
+
+  variables {
+    domains = {
+      "known.example" = {
+        zone_id = "023e105f4ecef8ad9ca31a8372d0c356"
+      }
+    }
+
+    security_overrides = {
+      "unknown.example" = {
+        ssl = "strict"
+      }
+    }
+  }
+
+  expect_failures = [
+    output.security_standard,
+  ]
+}
+
 run "empty_domain_map_plans" {
   command = plan
 
   variables {
-    domains = {}
+    domains            = {}
+    security_overrides = {}
   }
 
   assert {

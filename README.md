@@ -101,6 +101,8 @@ against a local backend, so it never contacts R2. It refuses to run when Terrafo
 stops at the first failure.
 For the R2 state-backend setup and its separate operator commands, see the
 [Terraform state backend runbook](docs/terraform-state-backend-runbook.md).
+To prove the generated zone imports against remote state before adoption, see the
+[Terraform import acceptance runbook](docs/terraform-import-acceptance-runbook.md).
 
 `.secrets.baseline` is kept for local detect-secrets pre-flight checks.
 Gitleaks runs in GitHub Actions as the CI/CD history-scanning enforcement gate.
@@ -175,12 +177,23 @@ Generate Terraform-compatible domain mappings from Cloudflare:
 python run_tools.py --list
 ```
 
-The command prints HCL for the Terraform `domains` variable:
+The command prints HCL for the Terraform `domains` inventory variable. It remains valid as-is;
+optional posture exceptions belong in a separate `security_overrides` map. A `domains` entry
+holds only `zone_id`, and each zone ID must be unique. A `security_overrides` entry sets one or
+more of `always_use_https`, `bot_fight_mode`, `browser_integrity_check`, `min_tls_version`,
+`security_level`, and `ssl`. A plan fails if any of these rules is broken, including for a
+misspelled override field:
 
 ```hcl
 domains = {
   "example.com" = {
     zone_id = "..."
+  }
+}
+
+security_overrides = {
+  "example.com" = {
+    ssl = "strict"
   }
 }
 ```
