@@ -6,10 +6,22 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
 
+  # Grouped so both github/codeql-action steps move in one pull request: CodeQL
+  # fails when init and analyze are on different versions. The cooldown keeps
+  # releases younger than 7 days out.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions-minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
     open-pull-requests-limit: 5
 
 # Major Cloudflare provider versions are ignored deliberately. A major bump can
