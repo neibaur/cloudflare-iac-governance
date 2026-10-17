@@ -190,5 +190,15 @@ stricter, the stricter rule wins.
 - **Secrets.** Agents never read, print, or commit secret-bearing files.
 - **Labels.** Label agent-assisted pull requests `ai-assisted` and include
   `Co-authored-by` trailers.
+- **Review before you push.** In a local session, before opening a pull
+  request and before each push you make to an open one, use the
+  `reviewing-before-pushing` skill. After opening a pull request, or pushing
+  to one you opened or the maintainer asked you to follow, use
+  `following-pull-requests`, and do not report a pull request as ready until
+  the conditions in that skill hold. Both skills come from the `agent-ops`
+  plugin and are not files in this repository. If your session does not have
+  them, say so before you push and in the pull request description; do not
+  skip the review silently. The maintainer's own pushes are not covered, and a
+  push that only merges the base branch needs validation, not a review.
 
 In this repository's worktree handoff protocol, workers never push branches or open pull requests; the orchestrator does. That stricter rule wins over the first rail above.
