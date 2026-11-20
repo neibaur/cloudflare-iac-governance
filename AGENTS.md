@@ -163,8 +163,11 @@ These rails apply to every AI agent working in this repository and match the
 stricter, the stricter rule wins.
 
 - **Commits, not merges.** Agents may commit and push their own work to feature
-  branches. Agents never push to `main`, and never merge, approve, or close pull
-  requests.
+  branches. Agents never push to `main`, and never approve or close pull
+  requests. Agents never merge, except in a maintainer-started session under
+  the conditions in neibaur-labs/agent-ops GOVERNANCE.md §11 (ready, checks
+  green, mergeable, no bypass). Unattended runs never merge. The maintainer
+  merges any pull request that changes those merge rules.
 - **Protected paths: who commits them.** Agents may edit agent-instruction
   files (`AGENTS.md`, `CLAUDE.md`, and similar), `.github/**`, `LICENSE`, skill
   directories, and sub-agent definitions (`.claude/agents/**`). In a session the
