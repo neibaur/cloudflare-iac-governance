@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "neibaur-labs": {
+      "source": {
+        "source": "github",
+        "repo": "neibaur-labs/agent-ops"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "agent-ops@neibaur-labs": true
+  }
+}
